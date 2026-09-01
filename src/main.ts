@@ -1,0 +1,1 @@
+import'./styles.css';import{createGame}from'./phaser/config';import{GameController}from'./game/controller';import{Hud}from'./ui/Hud';const controller=new GameController();new Hud(controller);createGame('game-canvas',controller);

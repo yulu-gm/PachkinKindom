@@ -1,0 +1,2 @@
+import Phaser from 'phaser';import {BootScene} from './scenes/BootScene';import {GameScene} from './scenes/GameScene';import type{GameController}from'../game/controller';
+export const createGame=(parent:string,controller:GameController):Phaser.Game=>new Phaser.Game({type:Phaser.AUTO,parent,width:1280,height:656,backgroundColor:'#101820',pixelArt:true,physics:{default:'matter',matter:{gravity:{x:0,y:1.05},debug:false}},scale:{mode:Phaser.Scale.FIT,autoCenter:Phaser.Scale.CENTER_BOTH},callbacks:{preBoot:g=>g.registry.set('controller',controller)},scene:[BootScene,GameScene]});
