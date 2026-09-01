@@ -1,26 +1,39 @@
 import type{GameController}from'../game/controller';
-import type{BallClass,PegType,RunState,ShopSlot}from'../game/model';
+import{addBallExperience,nextExperienceCost}from'../game/ball-progression';
+import{createPlayerFighter,type Fighter}from'../game/battle';
+import type{BallClass,BallForm,PegType,RunState,ShopSlot}from'../game/model';
+import{createLaunchResult}from'../game/peg-grid';
 import{populationProgress}from'../game/shop';
 
-const CLASS_NAME:Record<BallClass,string>={warrior:'战士球',mage:'法师球',archer:'弓箭手球'};
+const CLASS_NAME:Record<BallClass,string>={warrior:'战士球',mage:'术士球',archer:'弓手球'};
 const CLASS_ICON:Record<BallClass,string>={warrior:'⚔',mage:'✦',archer:'➶'};
+const CLASS_COLOR_CSS:Record<BallClass,string>={warrior:'#d45846',mage:'#726de8',archer:'#55a863'};
 const CLASS_DESC:Record<BallClass,string>={warrior:'近战前排 · 生命 120 · 攻击 12 · 射程 1',mage:'远程爆发 · 生命 70 · 攻击 16 · 射程 3',archer:'高速远程 · 生命 80 · 攻击 11 · 射程 3'};
-const PEG_NAME:Record<Exclude<PegType,'normal'>,string>={power:'力量钉',haste:'疾速钉',guard:'守护钉',echo:'回响钉',spring:'弹簧钉'};
-const PEG_ICON:Record<Exclude<PegType,'normal'>,string>={power:'攻',haste:'速',guard:'盾',echo:'双',spring:'弹'};
-const PEG_DESC:Record<Exclude<PegType,'normal'>,string>={power:'本轮攻击 +10%；回响时效果翻倍',haste:'本轮攻速 +8%；回响时效果翻倍',guard:'获得最大生命 12% 护盾；回响时效果翻倍',echo:'使下一次特殊钉的效果触发两次',spring:'碰撞后强力反弹，改变单位球路线'};
+const PEG_NAME:Record<Exclude<PegType,'normal'>,string>={power:'力量钉',haste:'疾速钉',guard:'守护钉',echo:'回响钉',spring:'弹簧钉',amplifier:'增幅钉'};
+const PEG_ICON:Record<Exclude<PegType,'normal'>,string>={power:'攻',haste:'速',guard:'盾',echo:'双',spring:'弹',amplifier:'倍'};
+const PEG_DESC:Record<Exclude<PegType,'normal'>,string>={power:'本轮攻击 +10%；回响时效果翻倍',haste:'本轮攻速 +8%；回响时效果翻倍',guard:'获得最大生命 12% 护盾；回响时效果翻倍',echo:'使下一次特殊钉的效果触发两次',spring:'碰撞后强力反弹，改变单位球路线',amplifier:'先结算本次 EXP，随后经验倍率 ×1.5；回响时连续增幅两次'};
 const PHASE_NAME:Record<RunState['phase'],string>={SHOP:'整备',LAUNCHING:'发射',TRANSFERRING:'转移',BATTLE:'战斗',RUN_END:'结算'};
+const FORM_NAME:Record<BallForm,string>={warrior:'战士',knight:'骑士',general:'将军',commander:'统帅',lord:'领主',mage:'术士',wizard:'法师',elementalist:'元素师',magus:'魔导师',archmage:'大魔法师',archer:'弓手',crossbowman:'弩手',ranger:'游侠',sharpshooter:'神射手',hawkeye:'鹰眼射手'};
+type GrowthStats=Pick<Fighter,'attack'|'maxHp'|'attackEveryMs'|'range'|'shield'>;
 
 export class Hud{
   private hud=document.querySelector<HTMLElement>('#hud')!;
+  private growth=document.querySelector<HTMLElement>('#growth-panel')!;
   private modal=document.querySelector<HTMLElement>('#modal-root')!;
   private reduced=localStorage.getItem('pk-reduced')==='1';
   private lastLevel:number;
   private lastXp:number;
   private lastGold:number;
+  private growthStats=new Map<string,GrowthStats>();
   constructor(private c:GameController){
     const snapshot=c.snapshot();
     this.lastLevel=snapshot.population.level;this.lastXp=snapshot.population.xp;this.lastGold=snapshot.gold;
     c.subscribe(state=>this.render(state));
+    window.addEventListener('pk-growth-hit',(event:Event)=>{
+      const id=(event as CustomEvent<string>).detail;
+      this.renderGrowth(this.c.snapshot(),id);
+      this.pulseGrowth(id);
+    });
   }
   private action(fn:()=>void){try{fn()}catch(error){this.toast(error instanceof Error?error.message:'操作失败')}}
   private toast(text:string){const view=document.createElement('div');view.className='toast';view.textContent=text;document.body.append(view);setTimeout(()=>view.remove(),1600)}
@@ -73,7 +86,41 @@ export class Hud{
     const goldChip=this.hud.querySelector<HTMLElement>('.gold-chip');
     if(goldChip&&goldGained){goldChip.classList.add('gold-up');goldChip.addEventListener('animationend',()=>goldChip.classList.remove('gold-up'),{once:true})}
     if(state.phase==='RUN_END')this.results(state);else this.modal.innerHTML='';
+    this.renderGrowth(state);
   }
+
+  private renderGrowth(state:RunState,hitId?:string){
+    const ids=new Set(state.balls.map(ball=>ball.id));
+    for(const id of this.growthStats.keys())if(!ids.has(id))this.growthStats.delete(id);
+    const rows=state.balls.map(ball=>{
+      const result=state.launchResults[ball.id],pending=result&&!state.transferredBallIds.includes(ball.id);
+      const preview=pending?addBallExperience(ball,result.xp):ball,cost=nextExperienceCost(preview),ratio=cost?Math.min(1,preview.xp/cost):1,multiplier=result?.xpMultiplier??1;
+      const fighter=createPlayerFighter(preview,result??createLaunchResult(ball.id));
+      const stats:GrowthStats={attack:fighter.attack,maxHp:fighter.maxHp,attackEveryMs:fighter.attackEveryMs,range:fighter.range,shield:fighter.shield},previous=this.growthStats.get(ball.id);
+      const hot=(key:keyof GrowthStats)=>hitId===ball.id&&previous!==undefined&&previous[key]!==stats[key]?'stat-hot':'';
+      this.growthStats.set(ball.id,stats);
+      return`<article class="growth-unit" data-ball-id="${ball.id}" style="--unit:${CLASS_COLOR_CSS[ball.class]};--progress:${ratio*100}%">
+        <div class="growth-unit-head"><span class="growth-unit-icon">${CLASS_ICON[ball.class]}</span><b>${FORM_NAME[preview.form]}</b><span class="growth-stars">${'★'.repeat(preview.star)}</span></div>
+        <div class="growth-values"><span>${cost?`${this.compact(preview.xp)} / ${cost} EXP`:'成长完成'}</span>${multiplier>1?`<strong>×${this.multiplier(multiplier)}</strong>`:''}</div>
+        <div class="growth-bar"><i></i></div>
+        <div class="growth-stats">
+          <span class="${hot('attack')}" title="本轮最终攻击力"><i>攻</i>${fighter.attack}</span>
+          <span class="${hot('maxHp')}" title="最大生命"><i>命</i>${fighter.maxHp}</span>
+          <span class="${hot('attackEveryMs')}" title="每秒攻击次数"><i>速</i>${(1000/fighter.attackEveryMs).toFixed(2)}</span>
+          <span class="${hot('range')}" title="攻击距离"><i>距</i>${fighter.range}</span>
+          <span class="${hot('shield')}" title="本轮护盾"><i>盾</i>${fighter.shield}</span>
+        </div>
+      </article>`;
+    }).join('');
+    this.growth.innerHTML=`<div class="growth-title"><b>本轮单位成长</b><small>撞击钉子积累经验</small></div><div class="growth-list">${rows||'<div class="growth-empty">购买单位球后显示</div>'}</div>`;
+  }
+
+  private pulseGrowth(id:string){
+    const row=[...this.growth.querySelectorAll<HTMLElement>('.growth-unit')].find(view=>view.dataset.ballId===id);
+    if(!row)return;row.classList.remove('growth-hit');void row.offsetWidth;row.classList.add('growth-hit');
+  }
+  private compact(value:number){return Number.isFinite(value)?(Math.abs(value)<10000?String(Math.floor(value)):value.toExponential(2)):'∞'}
+  private multiplier(value:number){return Number.isFinite(value)?(value<1000?value.toFixed(2):value.toExponential(2)):'∞'}
 
   private results(state:RunState){
     const maxStar=Math.max(...state.balls.map(ball=>ball.star)),totalXp=state.balls.reduce((sum,ball)=>sum+ball.xp,0);

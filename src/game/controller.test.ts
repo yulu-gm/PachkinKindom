@@ -64,6 +64,8 @@ describe('controller',()=>{
     expect(enemyBounty({form:'warrior',star:1})).toBe(5);
     expect(enemyBounty({form:'knight',star:2})).toBe(7);
     expect(enemyBounty({form:'general',star:3})).toBe(8);
+    expect(enemyBounty({form:'commander',star:1})).toBe(8);
+    expect(enemyBounty({form:'lord',star:1})).toBe(8);
     controller.beginLaunch();
     const id=controller.snapshot().launchQueue[0]!;
     controller.finishBallLaunch(id);

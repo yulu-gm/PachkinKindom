@@ -5,12 +5,18 @@ export const FORM_STATS:Record<BallForm,FormStats>={
   warrior:{maxHp:120,attack:12,attackEveryMs:900,range:1},
   knight:{maxHp:180,attack:18,attackEveryMs:850,range:1},
   general:{maxHp:260,attack:28,attackEveryMs:800,range:1},
+  commander:{maxHp:360,attack:40,attackEveryMs:750,range:1},
+  lord:{maxHp:500,attack:56,attackEveryMs:700,range:2},
   mage:{maxHp:70,attack:16,attackEveryMs:1100,range:3},
-  elementalist:{maxHp:95,attack:25,attackEveryMs:1050,range:3},
-  archmage:{maxHp:125,attack:38,attackEveryMs:1000,range:4},
+  wizard:{maxHp:90,attack:22,attackEveryMs:1050,range:3},
+  elementalist:{maxHp:120,attack:30,attackEveryMs:1000,range:4},
+  magus:{maxHp:160,attack:42,attackEveryMs:930,range:4},
+  archmage:{maxHp:215,attack:58,attackEveryMs:850,range:5},
   archer:{maxHp:80,attack:11,attackEveryMs:750,range:3},
-  ranger:{maxHp:105,attack:17,attackEveryMs:650,range:4},
-  sharpshooter:{maxHp:135,attack:26,attackEveryMs:550,range:5},
+  crossbowman:{maxHp:100,attack:16,attackEveryMs:820,range:4},
+  ranger:{maxHp:125,attack:22,attackEveryMs:650,range:4},
+  sharpshooter:{maxHp:160,attack:31,attackEveryMs:550,range:5},
+  hawkeye:{maxHp:210,attack:44,attackEveryMs:480,range:5},
 };
 export const STAR_MULTIPLIER:Record<Star,number>={1:1,2:1.65,3:2.6};
 export type Team='player'|'enemy';
@@ -57,7 +63,7 @@ export function createBattle(players:BallUnit[],launches:Record<string,LaunchRes
   return{
     elapsedMs:0,events:[],
     fighters:[
-      ...players.map(ball=>createPlayerFighter(ball,launches[ball.id]??{ballId:ball.id,xp:0,attackBonus:0,hasteBonus:0,shieldRatio:0,echoPending:false})),
+      ...players.map(ball=>createPlayerFighter(ball,launches[ball.id]??{ballId:ball.id,xp:0,xpMultiplier:1,attackBonus:0,hasteBonus:0,shieldRatio:0,echoPending:false})),
       ...enemies.map(enemy=>createEnemyFighter(enemy,enemyScale)),
     ],
   };

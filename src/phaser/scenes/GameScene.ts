@@ -1,16 +1,17 @@
 import Phaser from'phaser';
-import{nextExperienceCost}from'../../game/ball-progression';
+import{addBallExperience,nextExperienceCost,progressionNode}from'../../game/ball-progression';
 import type{BattleEvent,BattleState}from'../../game/battle';
 import type{BallClass,BallForm,BallUnit,PegType,RunState}from'../../game/model';
 import type{GameController}from'../../game/controller';
 import{isRelaunchReady,TRACK}from'../pachinko/geometry';
 
-type ActiveBall={id:string;img:Phaser.Physics.Matter.Image;lastLaunch:number;retryReady:boolean;retryRing?:Phaser.GameObjects.Arc;forced:boolean;stalledSince?:number;rescueCount:number};
+type ActiveBall={id:string;img:Phaser.Physics.Matter.Image;lastLaunch:number;retryReady:boolean;retryRing?:Phaser.GameObjects.Arc;forced:boolean;stalledSince?:number;rescueCount:number;previewNode:number};
 type UnitView={root:Phaser.GameObjects.Container;sprite:Phaser.GameObjects.Sprite;bar:Phaser.GameObjects.Rectangle;shield:Phaser.GameObjects.Arc;role:'soldier'|'slime'};
 const CLASS_COLOR:Record<BallClass,number>={warrior:0xd45846,mage:0x726de8,archer:0x55a863};
-const PEG_COLOR:Record<PegType,number>={normal:0xdab15f,power:0xff5b57,haste:0x5bc8ff,guard:0x77d7b0,echo:0xc57bff,spring:0xffe35b};
-const PEG_SYMBOL:Record<PegType,string>={normal:'',power:'攻',haste:'速',guard:'盾',echo:'双',spring:'弹'};
-const FORM_NAME:Record<BallForm,string>={warrior:'战士',knight:'骑士',general:'将军',mage:'法师',elementalist:'元素使',archmage:'大法师',archer:'弓箭手',ranger:'游侠',sharpshooter:'神射手'};
+const PEG_COLOR:Record<PegType,number>={normal:0xdab15f,power:0xff5b57,haste:0x5bc8ff,guard:0x77d7b0,echo:0xc57bff,spring:0xffe35b,amplifier:0xa9df55};
+const PEG_SYMBOL:Record<PegType,string>={normal:'',power:'攻',haste:'速',guard:'盾',echo:'双',spring:'弹',amplifier:'倍'};
+const FORM_NAME:Record<BallForm,string>={warrior:'战士',knight:'骑士',general:'将军',commander:'统帅',lord:'领主',mage:'术士',wizard:'法师',elementalist:'元素师',magus:'魔导师',archmage:'大魔法师',archer:'弓手',crossbowman:'弩手',ranger:'游侠',sharpshooter:'神射手',hawkeye:'鹰眼射手'};
+const FORM_CLASS:Record<BallForm,BallClass>={warrior:'warrior',knight:'warrior',general:'warrior',commander:'warrior',lord:'warrior',mage:'mage',wizard:'mage',elementalist:'mage',magus:'mage',archmage:'mage',archer:'archer',crossbowman:'archer',ranger:'archer',sharpshooter:'archer',hawkeye:'archer'};
 const LAUNCH_SPEED={minX:-.45,maxX:.45,minY:-22.4,maxY:-20.8}as const;
 const BOARD_X=708,BOARD_Y=88,CELL_W=90,CELL_H=88;
 const boardPoint=(row:number,col:number)=>({x:BOARD_X+43+col*CELL_W,y:BOARD_Y+41+row*CELL_H});
@@ -55,7 +56,7 @@ export class GameScene extends Phaser.Scene{
     this.add.rectangle(972,328,610,640,0x183126).setStrokeStyle(6,0xd2a456);
     this.add.text(332,14,'♛ 王国训练场',{fontFamily:'monospace',fontSize:'22px',color:'#ffe1a0'}).setOrigin(.5,0);
     this.add.text(972,14,'⚔ 王国战棋场',{fontFamily:'monospace',fontSize:'22px',color:'#ffe1a0'}).setOrigin(.5,0);
-    this.add.text(332,46,'撞钉获得永久经验 | 特殊钉赋予本轮战斗效果',{fontFamily:'monospace',fontSize:'13px',color:'#9ec7d3'}).setOrigin(.5,0);
+    this.add.text(332,46,'撞钉积累本轮经验 | 特殊钉赋予本轮战斗效果',{fontFamily:'monospace',fontSize:'13px',color:'#9ec7d3'}).setOrigin(.5,0);
   }
 
   private buildMachine(){
@@ -103,7 +104,7 @@ export class GameScene extends Phaser.Scene{
     try{
       const img=this.matter.add.image(TRACK.spawn.x,TRACK.spawn.y,`${ball.class}-ball`).setCircle(TRACK.spawn.radius).setBounce(.84).setFriction(.001).setFrictionAir(.002).setDepth(8).setInteractive({useHandCursor:true});
       (img.body as MatterJS.BodyType).label=`ball:${id}`;
-      const active:ActiveBall={id,img,lastLaunch:this.time.now,retryReady:false,forced:false,rescueCount:0};
+      const active:ActiveBall={id,img,lastLaunch:this.time.now,retryReady:false,forced:false,rescueCount:0,previewNode:progressionNode(ball)};
       this.activeBalls.set(id,active);
       img.on('pointerdown',()=>this.relaunch(active));this.fire(active);
     }catch(error){console.error(`[GameScene] 发射单位球 ${id} 失败`,error)}
@@ -139,21 +140,37 @@ export class GameScene extends Phaser.Scene{
   private hitPeg(id:string,slotId:number){
     const active=this.activeBalls.get(id);if(!active)return;
     try{
+      const beforeNode=active.previewNode;
       const {result,springPower,xpGained}=this.c.recordPegHit(id,slotId),slot=this.c.snapshot().pegGrid[slotId]!;
-      this.burst(slot.x,slot.y,PEG_COLOR[slot.type]);this.floatText(slot.x,slot.y-8,`+${xpGained} EXP${slot.type==='normal'?'':` · ${PEG_SYMBOL[slot.type]}`}`,PEG_COLOR[slot.type]);
+      const preview=this.previewBall(id),node=progressionNode(preview);active.previewNode=node;window.dispatchEvent(new CustomEvent('pk-growth-hit',{detail:id}));
+      this.burst(slot.x,slot.y,PEG_COLOR[slot.type]);this.floatText(slot.x,slot.y-8,`+${this.compactNumber(xpGained)} EXP${slot.type==='normal'?'':` · ${PEG_SYMBOL[slot.type]}`}`,PEG_COLOR[slot.type]);
+      if(slot.type==='amplifier')this.floatText(slot.x,slot.y+12,`EXP ×${this.compactMultiplier(result.xpMultiplier)}`,PEG_COLOR.amplifier);
+      if(node>beforeNode)this.boostGrowth(active,beforeNode,node,preview);
       if(springPower)active.img.setVelocity(Phaser.Math.FloatBetween(-3.5,3.5)*springPower,-14-(springPower-1)*6);
       if(result.xp%50===0&&!this.reduced)this.cameras.main.shake(60,.002);
     }catch{}
   }
+  private previewBall(id:string,state=this.c.snapshot()){
+    const ball=state.balls.find(value=>value.id===id)!,result=state.launchResults[id];
+    return result&&!state.transferredBallIds.includes(id)?addBallExperience(ball,result.xp):ball;
+  }
+  private boostGrowth(active:ActiveBall,beforeNode:number,node:number,preview:BallUnit){
+    const gained=node-beforeNode,body=active.img.body as MatterJS.BodyType,evolved=Math.floor(beforeNode/3)!==Math.floor(node/3),color=CLASS_COLOR[preview.class];
+    active.img.setBounce(Math.min(1.08,.84+.04*node)).setFrictionAir(Math.max(.0006,.002-.00018*node));
+    active.img.setVelocity(body.velocity.x+Phaser.Math.FloatBetween(-1.5,1.5),Math.min(body.velocity.y,-6-1.2*gained-(evolved?3:0)));
+    const wave=this.add.circle(active.img.x,active.img.y,17,color,.08).setStrokeStyle(evolved?5:3,color).setDepth(12);
+    this.tweens.add({targets:wave,scale:evolved?2.5:1.8,alpha:0,duration:this.reduced?140:280,onComplete:()=>wave.destroy()});
+    this.floatText(active.img.x,active.img.y-22,evolved?`${FORM_NAME[preview.form]}进化！`:`升星 ×${gained} · 弹力提升`,color);
+    if(evolved)this.banner(`${FORM_NAME[preview.form]}进化！`,color);
+  }
+  private compactNumber(value:number){if(!Number.isFinite(value))return'∞';return Math.abs(value)<10000?String(Math.floor(value)):value.toExponential(2)}
+  private compactMultiplier(value:number){if(!Number.isFinite(value))return'∞';return value<1000?value.toFixed(2):value.toExponential(2)}
   private exitBall(id:string){
     const active=this.activeBalls.get(id);if(!active)return;
     this.activeBalls.delete(id);
-    const before=this.c.snapshot().balls.find(ball=>ball.id===id)!;
     this.clearRetry(active);active.img.destroy();
     try{this.c.finishBallLaunch(id)}catch(error){console.error(`[GameScene] 结算单位球 ${id} 失败`,error)}
     const after=this.c.snapshot().balls.find(ball=>ball.id===id)!;
-    if(before.form!==after.form)this.banner(`${FORM_NAME[before.form]} 进化为 ${FORM_NAME[after.form]}！`,CLASS_COLOR[after.class]);
-    else if(before.star!==after.star)this.banner(`${FORM_NAME[after.form]} 升至 ${after.star} 星！`,0xffd65c);
     const target=boardPoint(after.cell.row,after.cell.col);
     const waiting=this.makeUnit(target.x,target.y,after.form,after.star,false,after);
     waiting.root.setScale(.75).setAlpha(0);this.deployedViews.set(id,waiting.root);
@@ -181,7 +198,7 @@ export class GameScene extends Phaser.Scene{
 
   private makeUnit(x:number,y:number,form:BallForm,star:number,enemy=false,ball?:BallUnit):UnitView{
     const role=enemy?'slime':'soldier';
-    const className=ball?.class??(form==='mage'||form==='elementalist'||form==='archmage'?'mage':form==='archer'||form==='ranger'||form==='sharpshooter'?'archer':'warrior');
+    const className=ball?.class??FORM_CLASS[form];
     const color=CLASS_COLOR[className];
     const ring=this.add.ellipse(0,28,52,16,color,.25).setStrokeStyle(3,color),sprite=this.add.sprite(0,-5,`${role}-idle`).setScale(enemy?4:3);
     const label=this.add.text(0,26,FORM_NAME[form],{fontFamily:'monospace',fontSize:'11px',fontStyle:'bold',color:'#fff',stroke:'#151018',strokeThickness:3}).setOrigin(.5);

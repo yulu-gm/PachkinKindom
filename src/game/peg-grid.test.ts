@@ -25,4 +25,17 @@ describe('peg grid',()=>{
     result=applyPegHit(result,'normal');
     expect(result.echoPending).toBe(true);
   });
+
+  it('stacks amplifier multipliers without a design cap and doubles amplification after echo',()=>{
+    let result=applyPegHit(createLaunchResult('b1'),'amplifier',4);
+    expect(result).toMatchObject({xp:4,xpMultiplier:1.5});
+    result=applyPegHit(result,'amplifier',4);
+    expect(result).toMatchObject({xp:10,xpMultiplier:2.25});
+    result=applyPegHit(result,'echo',4);
+    result=applyPegHit(result,'amplifier',4);
+    expect(result.xp).toBe(28);
+    expect(result.xpMultiplier).toBeCloseTo(5.0625);
+    for(let hit=0;hit<20;hit++)result=applyPegHit(result,'amplifier',4);
+    expect(result.xpMultiplier).toBeGreaterThan(10000);
+  });
 });

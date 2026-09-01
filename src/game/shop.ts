@@ -3,8 +3,8 @@ import type{BallClass,BallUnit,Cell,PopulationState,RunState,ShopItem,ShopSlot,S
 
 export const POP_THRESHOLDS=[0,4,10,18,30,46,66,90]as const;
 const BALLS:readonly BallClass[]=['warrior','mage','archer'];
-const PEGS:readonly SpecialPegType[]=['power','haste','guard','spring','echo'];
-export const PEG_PRICES:Record<SpecialPegType,number>={power:4,haste:4,guard:5,spring:5,echo:6};
+const PEGS:readonly SpecialPegType[]=['power','haste','guard','spring','echo','amplifier'];
+export const PEG_PRICES:Record<SpecialPegType,number>={power:4,haste:4,guard:5,spring:5,echo:6,amplifier:7};
 export const BALL_PRICE=5;
 const pick=<T>(values:readonly T[],seed:number)=>values[Math.abs(seed)%values.length]!;
 const slot=(item:ShopItem):ShopSlot=>({item,locked:false,sold:false});

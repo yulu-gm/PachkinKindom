@@ -1,10 +1,10 @@
 import type{BallClass,BallForm,BallUnit,Cell,Star}from'./model';
 
-export const XP_COSTS=[20,40,60,80,100,120,140,160]as const;
+export const XP_COSTS=[20,40,60,80,100,120,140,160,200,250,310,380,460,550]as const;
 export const FORM_CHAINS:Record<BallClass,readonly BallForm[]>={
-  warrior:['warrior','knight','general'],
-  mage:['mage','elementalist','archmage'],
-  archer:['archer','ranger','sharpshooter'],
+  warrior:['warrior','knight','general','commander','lord'],
+  mage:['mage','wizard','elementalist','magus','archmage'],
+  archer:['archer','crossbowman','ranger','sharpshooter','hawkeye'],
 };
 
 export const createBall=(id:string,ballClass:BallClass,cell:Cell):BallUnit=>({
@@ -21,7 +21,7 @@ export function addBallExperience(ball:BallUnit,amount:number):BallUnit{
   let node=progressionNode(ball);
   let xp=ball.xp+Math.max(0,Math.floor(amount));
   while(node<XP_COSTS.length&&xp>=XP_COSTS[node]!){xp-=XP_COSTS[node]!;node++}
-  if(node>=XP_COSTS.length)return{...ball,form:FORM_CHAINS[ball.class][2]!,star:3,xp:0};
+  if(node>=XP_COSTS.length){const chain=FORM_CHAINS[ball.class];return{...ball,form:chain[chain.length-1]!,star:3,xp:0}}
   return{
     ...ball,
     form:FORM_CHAINS[ball.class][Math.floor(node/3)]!,

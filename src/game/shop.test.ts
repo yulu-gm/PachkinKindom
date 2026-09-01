@@ -20,4 +20,9 @@ describe('shop',()=>{
     const ballSlot=state.shop.slots.findIndex(value=>value.item.kind==='ball');
     expect(()=>buyBallFromShop(state,ballSlot)).toThrow('人口已满');
   });
+
+  it('rolls the amplifier peg at its seven-gold price',()=>{
+    const amplifier=createShop(2).slots.find(slot=>slot.item.kind==='peg'&&slot.item.pegType==='amplifier');
+    expect(amplifier?.item).toEqual({kind:'peg',pegType:'amplifier',price:7});
+  });
 });

@@ -10,7 +10,7 @@ export const GRID_SLOTS:PegSlot[]=Array.from({length:GRID_COLUMNS*GRID_ROWS},(_,
 }));
 
 export const createLaunchResult=(ballId:string):LaunchResult=>({
-  ballId,xp:0,attackBonus:0,hasteBonus:0,shieldRatio:0,echoPending:false,
+  ballId,xp:0,xpMultiplier:1,attackBonus:0,hasteBonus:0,shieldRatio:0,echoPending:false,
 });
 
 export function applyPegHit(result:LaunchResult,type:PegType,baseXp=2):LaunchResult{
@@ -18,11 +18,12 @@ export function applyPegHit(result:LaunchResult,type:PegType,baseXp=2):LaunchRes
   const times=result.echoPending&&special?2:1;
   const next:LaunchResult={
     ...result,
-    xp:result.xp+Math.max(1,Math.floor(baseXp)),
+    xp:result.xp+Math.max(1,Math.floor(baseXp*result.xpMultiplier)),
     echoPending:type==='echo'?true:special?false:result.echoPending,
   };
   if(type==='power')next.attackBonus=Math.min(1,next.attackBonus+.1*times);
   if(type==='haste')next.hasteBonus=Math.min(.8,next.hasteBonus+.08*times);
   if(type==='guard')next.shieldRatio+=.12*times;
+  if(type==='amplifier')next.xpMultiplier*=1.5**times;
   return next;
 }

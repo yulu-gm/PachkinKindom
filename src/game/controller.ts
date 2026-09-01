@@ -7,7 +7,7 @@ import{createRun}from'./run-state';
 import{buyBallFromShop,buyPopulationXp,createShop,rerollShop}from'./shop';
 
 type Listener=(state:RunState)=>void;
-const FORM_TIER:Record<BallForm,number>={warrior:0,knight:1,general:2,mage:0,elementalist:1,archmage:2,archer:0,ranger:1,sharpshooter:2};
+const FORM_TIER:Record<BallForm,number>={warrior:0,knight:1,general:2,commander:3,lord:4,mage:0,wizard:1,elementalist:2,magus:3,archmage:4,archer:0,crossbowman:1,ranger:2,sharpshooter:3,hawkeye:4};
 export const enemyBounty=(enemy:{form:BallForm;star:Star})=>Math.min(8,5+FORM_TIER[enemy.form]+enemy.star-1);
 export const stageReward=(stage:number)=>ENCOUNTERS[Math.min(stage-1,ENCOUNTERS.length-1)]!.enemies.reduce((sum,enemy)=>sum+enemyBounty(enemy),0);
 

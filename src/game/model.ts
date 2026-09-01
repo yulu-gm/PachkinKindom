@@ -1,13 +1,13 @@
 export type Phase='SHOP'|'LAUNCHING'|'TRANSFERRING'|'BATTLE'|'RUN_END';
 export type BallClass='warrior'|'mage'|'archer';
-export type BallForm='warrior'|'knight'|'general'|'mage'|'elementalist'|'archmage'|'archer'|'ranger'|'sharpshooter';
+export type BallForm='warrior'|'knight'|'general'|'commander'|'lord'|'mage'|'wizard'|'elementalist'|'magus'|'archmage'|'archer'|'crossbowman'|'ranger'|'sharpshooter'|'hawkeye';
 export type Star=1|2|3;
 export type Cell={row:0|1|2|3;col:0|1|2|3|4|5};
 export type BallUnit={id:string;class:BallClass;form:BallForm;star:Star;xp:number;cell:Cell};
-export type PegType='normal'|'power'|'haste'|'guard'|'echo'|'spring';
+export type PegType='normal'|'power'|'haste'|'guard'|'echo'|'spring'|'amplifier';
 export type SpecialPegType=Exclude<PegType,'normal'>;
 export type PegSlot={id:number;x:number;y:number;type:PegType};
-export type LaunchResult={ballId:string;xp:number;attackBonus:number;hasteBonus:number;shieldRatio:number;echoPending:boolean};
+export type LaunchResult={ballId:string;xp:number;xpMultiplier:number;attackBonus:number;hasteBonus:number;shieldRatio:number;echoPending:boolean};
 export type ShopItem={kind:'ball';ballClass:BallClass;price:5}|{kind:'peg';pegType:SpecialPegType;price:number};
 export type ShopSlot={item:ShopItem;locked:boolean;sold:boolean};
 export type ShopState={slots:ShopSlot[];rerollCost:number;seed:number};

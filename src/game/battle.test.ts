@@ -9,6 +9,19 @@ describe('battle',()=>{
     expect(createPlayerFighter(ball,launch)).toMatchObject({attack:102,maxHp:676,attackEveryMs:645,shield:162});
   });
 
+  it('uses the approved fifth-form base stats',()=>{
+    const cases=[
+      {class:'warrior',form:'lord',maxHp:500,attack:56,attackEveryMs:700,range:2},
+      {class:'archer',form:'hawkeye',maxHp:210,attack:44,attackEveryMs:480,range:5},
+      {class:'mage',form:'archmage',maxHp:215,attack:58,attackEveryMs:850,range:5},
+    ]as const;
+    for(const expected of cases){
+      const{class:ballClass,...stats}=expected;
+      const ball={id:expected.form,class:ballClass,form:expected.form,star:1,xp:0,cell:{row:1,col:1}}as const;
+      expect(createPlayerFighter(ball,createLaunchResult(ball.id))).toMatchObject(stats);
+    }
+  });
+
   it('absorbs damage with launch shield before hp',()=>{
     const player={id:'p',class:'warrior',form:'warrior',star:1,xp:0,cell:{row:1,col:1}}as const;
     const state=createBattle([player],{p:{...createLaunchResult('p'),shieldRatio:.12}},[{id:'e',form:'warrior',star:1,row:1,col:2}],1);
