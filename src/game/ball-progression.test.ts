@@ -1,0 +1,16 @@
+import{describe,expect,it}from'vitest';
+import{addBallExperience,createBall,nextExperienceCost}from'./ball-progression';
+
+describe('unit-ball progression',()=>{
+  it('carries excess experience across star and evolution nodes',()=>{
+    const grown=addBallExperience(createBall('b1','warrior',{row:1,col:1}),125);
+    expect(grown).toMatchObject({form:'knight',star:1,xp:5});
+    expect(nextExperienceCost(grown)).toBe(80);
+  });
+
+  it('caps the final form at three stars',()=>{
+    const grown=addBallExperience(createBall('b1','mage',{row:1,col:1}),9999);
+    expect(grown).toMatchObject({form:'archmage',star:3,xp:0});
+    expect(nextExperienceCost(grown)).toBeUndefined();
+  });
+});

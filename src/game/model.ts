@@ -1,2 +1,20 @@
-export type Phase='PREP'|'LAUNCHING'|'REVEAL'|'BATTLE'|'VICTORY'|'RUN_END';export type Rarity='white'|'blue'|'purple'|'orange'|'red';export type UnitKind='guard'|'swordsman'|'axeman'|'longbow'|'crossbow'|'slinger';export type Star=1|2|3;export type Cell={row:0|1|2|3;col:0|1|2|3|4|5};export type Unit={id:string;kind:UnitKind;star:Star;location:'board'|'bench'|'recruit';cell?:Cell;benchIndex?:number};export type RunState={seed:number;phase:Phase;gold:number;stage:number;nextId:number;units:Unit[];settledBallIds:string[];ballsFired:number;highestRarity:Rarity;result?:'victory'|'defeat'};
-export const KINDS:UnitKind[]=['guard','swordsman','axeman','longbow','crossbow','slinger'];export const RARITIES:Rarity[]=['white','blue','purple','orange','red'];
+export type Phase='SHOP'|'LAUNCHING'|'TRANSFERRING'|'BATTLE'|'RUN_END';
+export type BallClass='warrior'|'mage'|'archer';
+export type BallForm='warrior'|'knight'|'general'|'mage'|'elementalist'|'archmage'|'archer'|'ranger'|'sharpshooter';
+export type Star=1|2|3;
+export type Cell={row:0|1|2|3;col:0|1|2|3|4|5};
+export type BallUnit={id:string;class:BallClass;form:BallForm;star:Star;xp:number;cell:Cell};
+export type PegType='normal'|'power'|'haste'|'guard'|'echo'|'spring';
+export type SpecialPegType=Exclude<PegType,'normal'>;
+export type PegSlot={id:number;x:number;y:number;type:PegType};
+export type LaunchResult={ballId:string;xp:number;attackBonus:number;hasteBonus:number;shieldRatio:number;echoPending:boolean};
+export type ShopItem={kind:'ball';ballClass:BallClass;price:5}|{kind:'peg';pegType:SpecialPegType;price:number};
+export type ShopSlot={item:ShopItem;locked:boolean;sold:boolean};
+export type ShopState={slots:ShopSlot[];rerollCost:number;seed:number};
+export type PopulationState={level:number;xp:number};
+export type RunState={
+  seed:number;phase:Phase;gold:number;stage:number;nextId:number;
+  balls:BallUnit[];pegGrid:PegSlot[];shop:ShopState;population:PopulationState;
+  launchResults:Record<string,LaunchResult>;launchQueue:string[];transferredBallIds:string[];
+  result?:'victory'|'defeat';
+};
