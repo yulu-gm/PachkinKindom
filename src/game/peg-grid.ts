@@ -1,11 +1,11 @@
 import type{LaunchResult,PegSlot,PegType}from'./model';
 
 export const GRID_COLUMNS=8;
-export const GRID_ROWS=7;
+export const GRID_ROWS=5;
 export const GRID_SLOTS:PegSlot[]=Array.from({length:GRID_COLUMNS*GRID_ROWS},(_,id)=>({
   id,
   x:60+(id%GRID_COLUMNS)*68,
-  y:140+Math.floor(id/GRID_COLUMNS)*55,
+  y:250+Math.floor(id/GRID_COLUMNS)*55,
   type:'normal',
 }));
 

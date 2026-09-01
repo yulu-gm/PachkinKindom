@@ -20,8 +20,7 @@ export class GameScene extends Phaser.Scene{
   private pegViews=new Map<number,{ring:Phaser.GameObjects.Arc;text:Phaser.GameObjects.Text}>();
   private prepViews:Phaser.GameObjects.GameObject[]=[];
   private battleViews=new Map<string,UnitView>();
-  private transferViews=new Map<string,Phaser.GameObjects.Container>();
-  private transferring=new Set<string>();
+  private deployedViews=new Map<string,Phaser.GameObjects.Container>();
   private reduced=false;
   private acc=0;
   private unsub?:()=>void;
@@ -78,10 +77,7 @@ export class GameScene extends Phaser.Scene{
     }
     this.matter.add.rectangle(TRACK.exit.x,TRACK.exit.y,TRACK.exit.width,TRACK.exit.height,{isStatic:true,isSensor:true,label:'exit'});
     this.add.rectangle(TRACK.exit.x,TRACK.exit.y,TRACK.exit.width,8,0x79d9ca,.25).setStrokeStyle(2,0x9af6dd);
-    this.add.text(300,558,'▼ 单位转移出口 ▼',{fontFamily:'monospace',fontSize:'11px',color:'#9af6dd'}).setOrigin(.5,0);
-    const lane=this.add.graphics().setDepth(1);lane.lineStyle(14,0x14252b,.95).beginPath().moveTo(300,580).lineTo(620,610).lineTo(700,610).lineTo(745,560).strokePath();
-    lane.lineStyle(3,0x75e5d2,.8).beginPath().moveTo(300,580).lineTo(620,610).lineTo(700,610).lineTo(745,560).strokePath();
-    this.add.text(632,590,'单位转移轨道 →',{fontFamily:'monospace',fontSize:'11px',color:'#9af6dd'}).setOrigin(.5);
+    this.add.text(300,558,'▼ 战场部署出口 ▼',{fontFamily:'monospace',fontSize:'11px',color:'#9af6dd'}).setOrigin(.5,0);
   }
 
   private drawBoard(){
@@ -135,23 +131,19 @@ export class GameScene extends Phaser.Scene{
     }catch{}
   }
   private exitBall(id:string){
-    if(!this.active||this.active.id!==id||this.transferring.has(id))return;
-    this.transferring.add(id);
-    const before=this.c.snapshot().balls.find(ball=>ball.id===id)!,x=this.active.img.x,y=this.active.img.y;
+    if(!this.active||this.active.id!==id)return;
+    const before=this.c.snapshot().balls.find(ball=>ball.id===id)!;
     this.clearRetry();this.active.img.destroy();this.active=undefined;this.c.finishBallLaunch(id);
     const after=this.c.snapshot().balls.find(ball=>ball.id===id)!;
     if(before.form!==after.form)this.banner(`${FORM_NAME[before.form]} 进化为 ${FORM_NAME[after.form]}！`,CLASS_COLOR[after.class]);
     else if(before.star!==after.star)this.banner(`${FORM_NAME[after.form]} 升至 ${after.star} 星！`,0xffd65c);
-    const token=this.add.image(x,y,`${after.class}-ball`).setDepth(20).setScale(1.05),target=boardPoint(after.cell.row,after.cell.col);
-    this.tweens.chain({targets:token,tweens:[
-      {x:300,y:580,duration:260,ease:'Sine.In'},{x:650,y:610,duration:560,ease:'Sine.InOut'},
-      {x:745,y:560,duration:220,ease:'Sine.Out'},{x:target.x,y:target.y,duration:420,ease:'Back.Out'},
-    ],onComplete:()=>{
-      token.destroy();this.transferring.delete(id);this.c.completeBallTransfer(id);
-      if(this.c.snapshot().phase==='LAUNCHING'){
-        const waiting=this.makeUnit(target.x,target.y,after.form,after.star,false,after);this.transferViews.set(id,waiting.root);
-        this.time.delayedCall(220,()=>this.spawnCurrentBall());
-      }
+    const target=boardPoint(after.cell.row,after.cell.col);
+    const waiting=this.makeUnit(target.x,target.y,after.form,after.star,false,after);
+    waiting.root.setScale(.75).setAlpha(0);this.deployedViews.set(id,waiting.root);
+    this.spawnBurst(target.x,target.y,after.class);
+    this.tweens.add({targets:waiting.root,scale:1,alpha:1,duration:180,ease:'Back.Out',onComplete:()=>{
+      this.c.completeBallTransfer(id);
+      if(this.c.snapshot().phase==='LAUNCHING')this.time.delayedCall(120,()=>this.spawnCurrentBall());
     }});
   }
 
@@ -163,7 +155,7 @@ export class GameScene extends Phaser.Scene{
   }
   private clearPrep(){for(const view of this.prepViews)view.destroy();this.prepViews=[]}
   private renderPrep(state:RunState){
-    this.clearPrep();this.clearBattle();this.clearTransferViews();
+    this.clearPrep();this.clearBattle();this.clearDeployedViews();
     for(const enemy of this.c.encounter().enemies){const point=boardPoint(enemy.row,enemy.col),view=this.makeUnit(point.x,point.y,enemy.form,enemy.star,true);view.root.setAlpha(.72);this.prepViews.push(view.root)}
     for(const ball of state.balls){
       const point=boardPoint(ball.cell.row,ball.cell.col),view=this.makeUnit(point.x,point.y,ball.form,ball.star,false,ball);
@@ -213,11 +205,11 @@ export class GameScene extends Phaser.Scene{
   private clearPegDrag(){this.dragPegSlot=undefined;if(this.dragMarker){this.dragMarker.destroy();this.dragMarker=undefined}}
 
   private clearBattle(){for(const view of this.battleViews.values())view.root.destroy();this.battleViews.clear()}
-  private clearTransferViews(){for(const view of this.transferViews.values())view.destroy();this.transferViews.clear()}
+  private clearDeployedViews(){for(const view of this.deployedViews.values())view.destroy();this.deployedViews.clear()}
   private renderBattle(){
     const battle=this.c.battleSnapshot();if(!battle)return;
     if(this.prepViews.length)this.clearPrep();
-    if(this.transferViews.size)this.clearTransferViews();
+    if(this.deployedViews.size)this.clearDeployedViews();
     for(const fighter of battle.fighters){
       let view=this.battleViews.get(fighter.id);
       if(fighter.hp>0){
@@ -261,6 +253,15 @@ export class GameScene extends Phaser.Scene{
     for(let index=0;index<(this.reduced?3:7);index++){
       const spark=this.add.image(x,y,'spark').setTint(color).setScale(.4).setDepth(28);
       this.tweens.add({targets:spark,x:x+Phaser.Math.Between(-22,22),y:y+Phaser.Math.Between(-22,16),alpha:0,scale:0,duration:260,onComplete:()=>spark.destroy()});
+    }
+  }
+  private spawnBurst(x:number,y:number,ballClass:BallClass){
+    this.burst(x,y,CLASS_COLOR[ballClass]);
+    const flash=this.add.circle(x,y,18,0xffffff,.55).setStrokeStyle(4,CLASS_COLOR[ballClass]).setDepth(24);
+    this.tweens.add({targets:flash,scale:2,alpha:0,duration:180,ease:'Cubic.Out',onComplete:()=>flash.destroy()});
+    for(let index=0;index<(this.reduced?3:6);index++){
+      const puff=this.add.circle(x+Phaser.Math.Between(-8,8),y+Phaser.Math.Between(-6,6),Phaser.Math.Between(5,8),index%2?0xd8e4df:0xffffff,.72).setDepth(23);
+      this.tweens.add({targets:puff,x:puff.x+Phaser.Math.Between(-15,15),y:puff.y+Phaser.Math.Between(-15,8),scale:1.55,alpha:0,duration:220,ease:'Cubic.Out',onComplete:()=>puff.destroy()});
     }
   }
   private floatText(x:number,y:number,text:string,color:number){

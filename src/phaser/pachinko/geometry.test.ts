@@ -14,11 +14,11 @@ describe('pachinko launch track geometry',()=>{
     expect(TRACK.innerRailTop-guideYAtInnerRail).toBeGreaterThan(TRACK.spawn.radius*2+12);
     expect(TRACK.guide.left).toBeLessThan(TRACK.innerRailX);
   });
-  it('keeps every 8 by 7 grid peg outside launcher and transfer safe zones',()=>{
-    expect(GRID_SLOTS).toHaveLength(56);
+  it('keeps every lower 8 by 5 grid peg outside launcher and exit safe zones',()=>{
+    expect(GRID_SLOTS).toHaveLength(40);
     expect(new Set(GRID_SLOTS.map(peg=>peg.x))).toHaveLength(8);
-    expect(new Set(GRID_SLOTS.map(peg=>peg.y))).toHaveLength(7);
-    for(const peg of GRID_SLOTS){expect(peg.x).toBeLessThanOrEqual(536);expect(peg.y).toBeGreaterThanOrEqual(140);expect(peg.y).toBeLessThanOrEqual(470)}
+    expect(new Set(GRID_SLOTS.map(peg=>peg.y))).toHaveLength(5);
+    for(const peg of GRID_SLOTS){expect(peg.x).toBeLessThanOrEqual(536);expect(peg.y).toBeGreaterThanOrEqual(250);expect(peg.y).toBeLessThanOrEqual(470)}
   });
   it('only allows a returned ball at the launch origin to relaunch',()=>{
     expect(isRelaunchReady(TRACK.spawn.x,TRACK.spawn.y,1,900)).toBe(true);
