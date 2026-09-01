@@ -11,6 +11,8 @@ export const createBall=(id:string,ballClass:BallClass,cell:Cell):BallUnit=>({
   id,class:ballClass,form:FORM_CHAINS[ballClass][0]!,star:1,xp:0,cell,
 });
 
+export const resetBallProgression=(ball:BallUnit):BallUnit=>({...ball,form:FORM_CHAINS[ball.class][0]!,star:1,xp:0});
+
 export const progressionNode=(ball:BallUnit)=>FORM_CHAINS[ball.class].indexOf(ball.form)*3+(ball.star-1);
 
 export const nextExperienceCost=(ball:BallUnit)=>XP_COSTS[progressionNode(ball)];

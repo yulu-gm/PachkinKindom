@@ -5,12 +5,13 @@ import type{BallClass,BallForm,BallUnit,PegType,RunState}from'../../game/model';
 import type{GameController}from'../../game/controller';
 import{isRelaunchReady,TRACK}from'../pachinko/geometry';
 
-type ActiveBall={id:string;img:Phaser.Physics.Matter.Image;lastLaunch:number;retryReady:boolean;retryRing?:Phaser.GameObjects.Arc;forced:boolean;stalledSince?:number};
+type ActiveBall={id:string;img:Phaser.Physics.Matter.Image;lastLaunch:number;retryReady:boolean;retryRing?:Phaser.GameObjects.Arc;forced:boolean;stalledSince?:number;rescueCount:number};
 type UnitView={root:Phaser.GameObjects.Container;sprite:Phaser.GameObjects.Sprite;bar:Phaser.GameObjects.Rectangle;shield:Phaser.GameObjects.Arc;role:'soldier'|'slime'};
 const CLASS_COLOR:Record<BallClass,number>={warrior:0xd45846,mage:0x726de8,archer:0x55a863};
 const PEG_COLOR:Record<PegType,number>={normal:0xdab15f,power:0xff5b57,haste:0x5bc8ff,guard:0x77d7b0,echo:0xc57bff,spring:0xffe35b};
 const PEG_SYMBOL:Record<PegType,string>={normal:'',power:'攻',haste:'速',guard:'盾',echo:'双',spring:'弹'};
 const FORM_NAME:Record<BallForm,string>={warrior:'战士',knight:'骑士',general:'将军',mage:'法师',elementalist:'元素使',archmage:'大法师',archer:'弓箭手',ranger:'游侠',sharpshooter:'神射手'};
+const LAUNCH_SPEED={minX:-.45,maxX:.45,minY:-22.4,maxY:-20.8}as const;
 const BOARD_X=708,BOARD_Y=88,CELL_W=90,CELL_H=88;
 const boardPoint=(row:number,col:number)=>({x:BOARD_X+43+col*CELL_W,y:BOARD_Y+41+row*CELL_H});
 
@@ -102,13 +103,17 @@ export class GameScene extends Phaser.Scene{
     try{
       const img=this.matter.add.image(TRACK.spawn.x,TRACK.spawn.y,`${ball.class}-ball`).setCircle(TRACK.spawn.radius).setBounce(.84).setFriction(.001).setFrictionAir(.002).setDepth(8).setInteractive({useHandCursor:true});
       (img.body as MatterJS.BodyType).label=`ball:${id}`;
-      const active:ActiveBall={id,img,lastLaunch:this.time.now,retryReady:false,forced:false};
+      const active:ActiveBall={id,img,lastLaunch:this.time.now,retryReady:false,forced:false,rescueCount:0};
       this.activeBalls.set(id,active);
       img.on('pointerdown',()=>this.relaunch(active));this.fire(active);
     }catch(error){console.error(`[GameScene] 发射单位球 ${id} 失败`,error)}
   }
   private fire(active:ActiveBall){
-    this.clearRetry(active);active.img.setAngularVelocity(0).setVelocity(Phaser.Math.FloatBetween(-.08,.08),-21.5);
+    this.clearRetry(active);
+    active.img.setAngularVelocity(Phaser.Math.FloatBetween(-.08,.08)).setVelocity(
+      Phaser.Math.FloatBetween(LAUNCH_SPEED.minX,LAUNCH_SPEED.maxX),
+      Phaser.Math.FloatBetween(LAUNCH_SPEED.minY,LAUNCH_SPEED.maxY),
+    );
     active.lastLaunch=this.time.now;active.forced=false;
   }
   private relaunch(active:ActiveBall){if(active.retryReady){this.fire(active);this.burst(active.img.x,active.img.y,0xffe06b);this.toast('再次发射！')}}
@@ -134,8 +139,8 @@ export class GameScene extends Phaser.Scene{
   private hitPeg(id:string,slotId:number){
     const active=this.activeBalls.get(id);if(!active)return;
     try{
-      const {result,springPower}=this.c.recordPegHit(id,slotId),slot=this.c.snapshot().pegGrid[slotId]!;
-      this.burst(slot.x,slot.y,PEG_COLOR[slot.type]);this.floatText(slot.x,slot.y-8,`+2 EXP${slot.type==='normal'?'':` · ${PEG_SYMBOL[slot.type]}`}`,PEG_COLOR[slot.type]);
+      const {result,springPower,xpGained}=this.c.recordPegHit(id,slotId),slot=this.c.snapshot().pegGrid[slotId]!;
+      this.burst(slot.x,slot.y,PEG_COLOR[slot.type]);this.floatText(slot.x,slot.y-8,`+${xpGained} EXP${slot.type==='normal'?'':` · ${PEG_SYMBOL[slot.type]}`}`,PEG_COLOR[slot.type]);
       if(springPower)active.img.setVelocity(Phaser.Math.FloatBetween(-3.5,3.5)*springPower,-14-(springPower-1)*6);
       if(result.xp%50===0&&!this.reduced)this.cameras.main.shake(60,.002);
     }catch{}
@@ -213,7 +218,7 @@ export class GameScene extends Phaser.Scene{
   private nearestPeg(x:number,y:number){return this.c.snapshot().pegGrid.map(slot=>({...slot,distance:Phaser.Math.Distance.Between(x,y,slot.x,slot.y)})).sort((a,b)=>a.distance-b.distance)[0]}
   private clearPegDrag(){this.dragPegSlot=undefined;if(this.dragMarker){this.dragMarker.destroy();this.dragMarker=undefined}}
 
-  private clearBattle(){for(const view of this.battleViews.values())view.root.destroy();this.battleViews.clear()}
+  private clearBattle(){for(const view of this.battleViews.values()){this.tweens.killTweensOf(view.root);view.root.destroy()}this.battleViews.clear()}
   private clearDeployedViews(){for(const view of this.deployedViews.values())view.destroy();this.deployedViews.clear()}
   private renderBattle(){
     const battle=this.c.battleSnapshot();if(!battle)return;
@@ -224,14 +229,14 @@ export class GameScene extends Phaser.Scene{
       if(fighter.hp>0){
         if(!view){const point=boardPoint(fighter.row,fighter.col);view=this.makeUnit(point.x,point.y,fighter.form,fighter.star,fighter.team==='enemy');this.battleViews.set(fighter.id,view)}
         const hp=Math.max(0,fighter.hp/fighter.maxHp);view.bar.setDisplaySize(52*hp,6);view.bar.setX(-26+26*hp);view.shield.setVisible(fighter.shield>0);
-      }else if(view){this.battleViews.delete(fighter.id);view.sprite.play(`${view.role}-death`);this.tweens.add({targets:view.root,alpha:0,duration:700,onComplete:()=>view?.root.destroy()})}
+      }else if(view){this.battleViews.delete(fighter.id);this.tweens.killTweensOf(view.root);view.sprite.play(`${view.role}-death`);this.tweens.add({targets:view.root,alpha:0,duration:700,onComplete:()=>{if(view?.root.active)view.root.destroy()}})}
     }
   }
   private playBattleEvents(events:BattleEvent[],battle:BattleState){
     for(const event of events){
       if(event.type==='move'){
         const view=this.battleViews.get(event.id);
-        if(view&&event.row!==undefined&&event.col!==undefined){const point=boardPoint(event.row,event.col);view.sprite.play(`${view.role}-walk`,true);this.tweens.add({targets:view.root,...point,duration:460,onComplete:()=>view?.sprite.play(`${view.role}-idle`,true)})}
+        if(view&&event.row!==undefined&&event.col!==undefined){const point=boardPoint(event.row,event.col);view.sprite.play(`${view.role}-walk`,true);this.tweens.add({targets:view.root,...point,duration:460,onComplete:()=>{if(view?.root.active&&view.sprite.active)view.sprite.play(`${view.role}-idle`,true)}})}
         continue;
       }
       if(event.type==='attack'&&event.target){
@@ -294,12 +299,18 @@ export class GameScene extends Phaser.Scene{
       if(canRetry)this.showRetry(active);
       if(active.retryRing)active.retryRing.setPosition(active.img.x,active.img.y);
       if(elapsed>12000&&!active.forced){active.forced=true;active.img.setVelocity((300-active.img.x)/45,12);this.toast('引导单位球前往出口')}
-      // 停在出口斜板上（钉区下方、近零速度、且不在重发区）的球，短暂静止后直接结算，避免卡死发射阶段
       const speed=Math.abs(body.velocity.x)+Math.abs(body.velocity.y);
-      const resting=active.img.y>470&&speed<1.5&&!canRetry;
-      active.stalledSince=resting?(active.stalledSince??this.time.now):undefined;
-      const stalledTooLong=active.stalledSince!==undefined&&this.time.now-active.stalledSince>2500;
-      if(elapsed>15500||stalledTooLong)this.exitBall(active.id);
+      const inPegField=active.img.x<TRACK.innerRailX-TRACK.spawn.radius&&active.img.y>TRACK.topY+TRACK.spawn.radius&&active.img.y<TRACK.exit.y;
+      const stalled=inPegField&&speed<.45&&!canRetry;
+      active.stalledSince=stalled?(active.stalledSince??this.time.now):undefined;
+      if(active.stalledSince!==undefined&&this.time.now-active.stalledSince>900){
+        const direction=active.img.x<TRACK.exit.x?1:-1;
+        active.rescueCount++;active.stalledSince=undefined;
+        active.img.setPosition(Phaser.Math.Clamp(active.img.x+direction*12,TRACK.leftWallX+24,TRACK.innerRailX-24),Math.min(active.img.y+26,TRACK.exit.y-24));
+        active.img.setAngularVelocity(Phaser.Math.FloatBetween(-.12,.12)).setVelocity(direction*Phaser.Math.FloatBetween(2.2,3.6),Phaser.Math.FloatBetween(3.5,5.5));
+        this.burst(active.img.x,active.img.y,0x9af6dd);
+      }
+      if(elapsed>15500)this.exitBall(active.id);
     }
     if(this.c.snapshot().phase==='BATTLE'){
       this.acc+=Math.min(delta,100);

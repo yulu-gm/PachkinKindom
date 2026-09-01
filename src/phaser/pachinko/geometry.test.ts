@@ -19,6 +19,8 @@ describe('pachinko launch track geometry',()=>{
     expect(new Set(GRID_SLOTS.map(peg=>peg.x))).toHaveLength(8);
     expect(new Set(GRID_SLOTS.map(peg=>peg.y))).toHaveLength(5);
     for(const peg of GRID_SLOTS){expect(peg.x).toBeLessThanOrEqual(536);expect(peg.y).toBeGreaterThanOrEqual(250);expect(peg.y).toBeLessThanOrEqual(470)}
+    const firstColumnX=Math.min(...GRID_SLOTS.map(peg=>peg.x)),leftWallInner=TRACK.leftWallX+9,pegRadius=9;
+    expect(firstColumnX-pegRadius-leftWallInner).toBeGreaterThan(TRACK.spawn.radius*2);
   });
   it('only allows a returned ball at the launch origin to relaunch',()=>{
     expect(isRelaunchReady(TRACK.spawn.x,TRACK.spawn.y,1,900)).toBe(true);

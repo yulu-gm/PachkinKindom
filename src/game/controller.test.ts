@@ -29,6 +29,7 @@ describe('controller',()=>{
     const [first,middle,last]=ids;
     // the last-launched ball may finish and transfer while earlier ones still fly
     for(let hit=0;hit<3;hit++)controller.recordPegHit(last!,0);
+    expect(controller.snapshot().launchResults[last!]!.xp).toBe(12);
     controller.finishBallLaunch(last!);
     expect(()=>controller.finishBallLaunch(last!)).toThrow();
     expect(controller.snapshot().phase).toBe('LAUNCHING');
@@ -77,17 +78,20 @@ describe('controller',()=>{
     const controller=new GameController(4,{...createRun(4),gold:4});
     // round 1: launch the starter ball and fight to a win
     const [firstId]=controller.beginLaunch();
-    controller.recordPegHit(firstId!,3);
+    for(let hit=0;hit<10;hit++)controller.recordPegHit(firstId!,3);
     controller.finishBallLaunch(firstId!);
+    expect(controller.snapshot().balls[0]).toMatchObject({star:2,xp:0});
     controller.completeBallTransfer(firstId!);
     expect(controller.snapshot().phase).toBe('BATTLE');
     for(let tick=0;tick<3000&&controller.snapshot().phase==='BATTLE';tick++)controller.tickBattle(50);
     expect(controller.snapshot().phase).toBe('SHOP');
     expect(controller.snapshot().stage).toBe(2);
+    expect(controller.snapshot().balls[0]).toMatchObject({form:'warrior',star:2,xp:0});
     // round 2: buy one more ball and launch everything at once
     controller.buyPopulationExperience();
     controller.buyItem(0);
     const ids=controller.beginLaunch();
+    expect(controller.snapshot().balls.every(ball=>ball.star===1&&ball.xp===0)).toBe(true);
     expect(ids.length).toBeGreaterThanOrEqual(2);
     for(const id of ids){
       controller.recordPegHit(id,2);

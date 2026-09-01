@@ -4,8 +4,10 @@ import{populationProgress}from'../game/shop';
 
 const CLASS_NAME:Record<BallClass,string>={warrior:'战士球',mage:'法师球',archer:'弓箭手球'};
 const CLASS_ICON:Record<BallClass,string>={warrior:'⚔',mage:'✦',archer:'➶'};
+const CLASS_DESC:Record<BallClass,string>={warrior:'近战前排 · 生命 120 · 攻击 12 · 射程 1',mage:'远程爆发 · 生命 70 · 攻击 16 · 射程 3',archer:'高速远程 · 生命 80 · 攻击 11 · 射程 3'};
 const PEG_NAME:Record<Exclude<PegType,'normal'>,string>={power:'力量钉',haste:'疾速钉',guard:'守护钉',echo:'回响钉',spring:'弹簧钉'};
 const PEG_ICON:Record<Exclude<PegType,'normal'>,string>={power:'攻',haste:'速',guard:'盾',echo:'双',spring:'弹'};
+const PEG_DESC:Record<Exclude<PegType,'normal'>,string>={power:'本轮攻击 +10%；回响时效果翻倍',haste:'本轮攻速 +8%；回响时效果翻倍',guard:'获得最大生命 12% 护盾；回响时效果翻倍',echo:'使下一次特殊钉的效果触发两次',spring:'碰撞后强力反弹，改变单位球路线'};
 const PHASE_NAME:Record<RunState['phase'],string>={SHOP:'整备',LAUNCHING:'发射',TRANSFERRING:'转移',BATTLE:'战斗',RUN_END:'结算'};
 
 export class Hud{
@@ -27,11 +29,13 @@ export class Hud{
     const item=slot.item,isBall=item.kind==='ball',full=isBall&&state.balls.length>=state.population.level;
     const icon=isBall?CLASS_ICON[item.ballClass]:PEG_ICON[item.pegType],name=isBall?CLASS_NAME[item.ballClass]:PEG_NAME[item.pegType];
     const hint=isBall?(full?'人口已满':'点击购买'):'拖到左侧钉位';
+    const description=isBall?CLASS_DESC[item.ballClass]:`${PEG_DESC[item.pegType]} · 基础碰撞 +${state.population.level+1} EXP`;
     const disabled=slot.sold||state.phase!=='SHOP'||state.gold<item.price||full;
-    return`<article class="shop-card ${isBall?'ball-card':'peg-card'} ${slot.sold?'sold':''}" data-slot="${index}" ${!isBall&&!disabled?'draggable="true"':''}>
+    return`<article class="shop-card ${isBall?'ball-card':'peg-card'} ${slot.sold?'sold':''}" data-slot="${index}" tabindex="0" ${!isBall&&!disabled?'draggable="true"':''}>
       <button class="lock ${slot.locked?'active':''}" data-lock="${index}" title="锁定此格">${slot.locked?'🔒':'◇'}</button>
       <div class="item-icon">${icon}</div><div class="item-copy"><b>${name}</b><small>${slot.sold?'已售出':hint}</small></div>
       <div class="price">● ${item.price}</div>
+      <div class="shop-tooltip" role="tooltip"><b>${name}</b><span>${description}</span></div>
     </article>`;
   }
 

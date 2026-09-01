@@ -1,4 +1,4 @@
-import{addBallExperience}from'./ball-progression';
+import{addBallExperience,resetBallProgression}from'./ball-progression';
 import{createBattle,stepBattle,type BattleEvent,type BattleState}from'./battle';
 import{ENCOUNTERS}from'./encounters';
 import type{BallForm,Cell,LaunchResult,RunState,SpecialPegType,Star}from'./model';
@@ -30,7 +30,7 @@ export class GameController{
     const queue=this.state.balls.map(ball=>ball.id);
     if(!queue.length)throw new Error('没有可发射的单位球');
     this.state={
-      ...this.state,phase:'LAUNCHING',launchQueue:queue,transferredBallIds:[],
+      ...this.state,phase:'LAUNCHING',balls:this.state.balls.map(resetBallProgression),launchQueue:queue,transferredBallIds:[],
       launchResults:Object.fromEntries(queue.map(id=>[id,createLaunchResult(id)])),
     };
     this.emit();
@@ -43,9 +43,9 @@ export class GameController{
     if(!peg)throw new Error('钉位不存在');
     const current=this.state.launchResults[ballId]??createLaunchResult(ballId);
     const springPower=peg.type==='spring'?(current.echoPending?2:1):0;
-    const result=applyPegHit(current,peg.type);
+    const result=applyPegHit(current,peg.type,this.state.population.level+1);
     this.state={...this.state,launchResults:{...this.state.launchResults,[ballId]:result}};
-    return{result,springPower};
+    return{result,springPower,xpGained:result.xp-current.xp};
   }
 
   finishBallLaunch(ballId:string){
