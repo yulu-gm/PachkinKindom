@@ -5,7 +5,7 @@ import type{BallClass,BallForm,BallUnit,PegType,RunState}from'../../game/model';
 import type{GameController}from'../../game/controller';
 import{isRelaunchReady,TRACK}from'../pachinko/geometry';
 
-type ActiveBall={id:string;img:Phaser.Physics.Matter.Image;lastLaunch:number;retryReady:boolean;retryRing?:Phaser.GameObjects.Arc;forced:boolean};
+type ActiveBall={id:string;img:Phaser.Physics.Matter.Image;lastLaunch:number;retryReady:boolean;retryRing?:Phaser.GameObjects.Arc;forced:boolean;stalledSince?:number};
 type UnitView={root:Phaser.GameObjects.Container;sprite:Phaser.GameObjects.Sprite;bar:Phaser.GameObjects.Rectangle;shield:Phaser.GameObjects.Arc;role:'soldier'|'slime'};
 const CLASS_COLOR:Record<BallClass,number>={warrior:0xd45846,mage:0x726de8,archer:0x55a863};
 const PEG_COLOR:Record<PegType,number>={normal:0xdab15f,power:0xff5b57,haste:0x5bc8ff,guard:0x77d7b0,echo:0xc57bff,spring:0xffe35b};
@@ -16,7 +16,7 @@ const boardPoint=(row:number,col:number)=>({x:BOARD_X+43+col*CELL_W,y:BOARD_Y+41
 
 export class GameScene extends Phaser.Scene{
   private c!:GameController;
-  private active?:ActiveBall;
+  private activeBalls=new Map<string,ActiveBall>();
   private pegViews=new Map<number,{ring:Phaser.GameObjects.Arc;text:Phaser.GameObjects.Text}>();
   private prepViews:Phaser.GameObjects.GameObject[]=[];
   private battleViews=new Map<string,UnitView>();
@@ -65,6 +65,8 @@ export class GameScene extends Phaser.Scene{
     addWall((TRACK.innerRailX+TRACK.outerWallX)/2,TRACK.launchFloorY,TRACK.outerWallX-TRACK.innerRailX,14);
     addWall(TRACK.guide.x,TRACK.guide.y,TRACK.guide.width,TRACK.guide.height,TRACK.guide.angle);
     addWall(105,522,170,12,.16);addWall(495,522,170,12,-.16);
+    this.add.rectangle(105,522,170,12,0x9b6d31).setRotation(.16).setStrokeStyle(3,0xf2c96f);
+    this.add.rectangle(495,522,170,12,0x9b6d31).setRotation(-.16).setStrokeStyle(3,0xf2c96f);
     this.add.rectangle(TRACK.innerRailX,(TRACK.innerRailTop+TRACK.innerRailBottom)/2,14,TRACK.innerRailBottom-TRACK.innerRailTop,0x9b6d31).setStrokeStyle(3,0xf2c96f);
     this.add.rectangle(TRACK.guide.x,TRACK.guide.y,TRACK.guide.width,TRACK.guide.height,0xc99a4c).setRotation(TRACK.guide.angle).setStrokeStyle(3,0xffd77c);
     this.add.rectangle(622,350,38,420,0xd9b46a,.12).setStrokeStyle(2,0x6f4925);
@@ -86,31 +88,39 @@ export class GameScene extends Phaser.Scene{
     this.add.text(1108,454,'敌方区域',{fontFamily:'monospace',fontSize:'13px',color:'#d8a9a0'}).setOrigin(.5);
   }
 
-  private startExpedition(){try{this.c.beginLaunch();this.spawnCurrentBall()}catch(error){this.toast(error instanceof Error?error.message:'无法开始远征')}}
-  private spawnCurrentBall(){
-    if(this.active||this.c.snapshot().phase!=='LAUNCHING')return;
-    const id=this.c.snapshot().launchQueue[0],ball=this.c.snapshot().balls.find(value=>value.id===id);
-    if(!id||!ball)return;
-    const img=this.matter.add.image(TRACK.spawn.x,TRACK.spawn.y,`${ball.class}-ball`).setCircle(TRACK.spawn.radius).setBounce(.84).setFriction(.001).setFrictionAir(.002).setDepth(8).setInteractive({useHandCursor:true});
-    (img.body as MatterJS.BodyType).label=`ball:${id}`;
-    this.active={id,img,lastLaunch:this.time.now,retryReady:false,forced:false};
-    img.on('pointerdown',()=>this.relaunch());this.fire();
+  private startExpedition(){
+    try{
+      this.c.beginLaunch();
+      const queue=this.c.snapshot().launchQueue;
+      queue.forEach((id,index)=>this.time.delayedCall(index*200,()=>this.spawnBall(id)));
+    }catch(error){this.toast(error instanceof Error?error.message:'无法开始远征')}
   }
-  private fire(){
-    if(!this.active)return;
-    this.clearRetry();this.active.img.setAngularVelocity(0).setVelocity(Phaser.Math.FloatBetween(-.08,.08),-21.5);
-    this.active.lastLaunch=this.time.now;this.active.forced=false;
+  private spawnBall(id:string){
+    if(this.activeBalls.has(id)||this.c.snapshot().phase!=='LAUNCHING')return;
+    const ball=this.c.snapshot().balls.find(value=>value.id===id);
+    if(!ball)return;
+    try{
+      const img=this.matter.add.image(TRACK.spawn.x,TRACK.spawn.y,`${ball.class}-ball`).setCircle(TRACK.spawn.radius).setBounce(.84).setFriction(.001).setFrictionAir(.002).setDepth(8).setInteractive({useHandCursor:true});
+      (img.body as MatterJS.BodyType).label=`ball:${id}`;
+      const active:ActiveBall={id,img,lastLaunch:this.time.now,retryReady:false,forced:false};
+      this.activeBalls.set(id,active);
+      img.on('pointerdown',()=>this.relaunch(active));this.fire(active);
+    }catch(error){console.error(`[GameScene] 发射单位球 ${id} 失败`,error)}
   }
-  private relaunch(){if(this.active?.retryReady){this.fire();this.burst(this.active.img.x,this.active.img.y,0xffe06b);this.toast('再次发射！')}}
-  private showRetry(){
-    if(!this.active||this.active.retryReady)return;
-    this.active.retryReady=true;
-    const ring=this.add.circle(this.active.img.x,this.active.img.y,18,0xffd36a,0).setStrokeStyle(3,0xffd36a).setDepth(7);
-    this.active.retryRing=ring;this.tweens.add({targets:ring,alpha:{from:.3,to:1},scale:{from:.9,to:1.25},duration:520,yoyo:true,repeat:-1});
+  private fire(active:ActiveBall){
+    this.clearRetry(active);active.img.setAngularVelocity(0).setVelocity(Phaser.Math.FloatBetween(-.08,.08),-21.5);
+    active.lastLaunch=this.time.now;active.forced=false;
   }
-  private clearRetry(){
-    if(!this.active)return;this.active.retryReady=false;
-    if(this.active.retryRing){this.tweens.killTweensOf(this.active.retryRing);this.active.retryRing.destroy();this.active.retryRing=undefined}
+  private relaunch(active:ActiveBall){if(active.retryReady){this.fire(active);this.burst(active.img.x,active.img.y,0xffe06b);this.toast('再次发射！')}}
+  private showRetry(active:ActiveBall){
+    if(active.retryReady)return;
+    active.retryReady=true;
+    const ring=this.add.circle(active.img.x,active.img.y,18,0xffd36a,0).setStrokeStyle(3,0xffd36a).setDepth(7);
+    active.retryRing=ring;this.tweens.add({targets:ring,alpha:{from:.3,to:1},scale:{from:.9,to:1.25},duration:520,yoyo:true,repeat:-1});
+  }
+  private clearRetry(active:ActiveBall){
+    active.retryReady=false;
+    if(active.retryRing){this.tweens.killTweensOf(active.retryRing);active.retryRing.destroy();active.retryRing=undefined}
   }
   private collide(event:any){
     for(const pair of event.pairs as any[]){
@@ -122,18 +132,20 @@ export class GameScene extends Phaser.Scene{
     }
   }
   private hitPeg(id:string,slotId:number){
-    if(!this.active||this.active.id!==id)return;
+    const active=this.activeBalls.get(id);if(!active)return;
     try{
       const {result,springPower}=this.c.recordPegHit(id,slotId),slot=this.c.snapshot().pegGrid[slotId]!;
-      this.burst(slot.x,slot.y,PEG_COLOR[slot.type]);this.floatText(slot.x,slot.y-8,`+10 EXP${slot.type==='normal'?'':` · ${PEG_SYMBOL[slot.type]}`}`,PEG_COLOR[slot.type]);
-      if(springPower)this.active.img.setVelocity(Phaser.Math.FloatBetween(-3.5,3.5)*springPower,-14-(springPower-1)*6);
+      this.burst(slot.x,slot.y,PEG_COLOR[slot.type]);this.floatText(slot.x,slot.y-8,`+2 EXP${slot.type==='normal'?'':` · ${PEG_SYMBOL[slot.type]}`}`,PEG_COLOR[slot.type]);
+      if(springPower)active.img.setVelocity(Phaser.Math.FloatBetween(-3.5,3.5)*springPower,-14-(springPower-1)*6);
       if(result.xp%50===0&&!this.reduced)this.cameras.main.shake(60,.002);
     }catch{}
   }
   private exitBall(id:string){
-    if(!this.active||this.active.id!==id)return;
+    const active=this.activeBalls.get(id);if(!active)return;
+    this.activeBalls.delete(id);
     const before=this.c.snapshot().balls.find(ball=>ball.id===id)!;
-    this.clearRetry();this.active.img.destroy();this.active=undefined;this.c.finishBallLaunch(id);
+    this.clearRetry(active);active.img.destroy();
+    try{this.c.finishBallLaunch(id)}catch(error){console.error(`[GameScene] 结算单位球 ${id} 失败`,error)}
     const after=this.c.snapshot().balls.find(ball=>ball.id===id)!;
     if(before.form!==after.form)this.banner(`${FORM_NAME[before.form]} 进化为 ${FORM_NAME[after.form]}！`,CLASS_COLOR[after.class]);
     else if(before.star!==after.star)this.banner(`${FORM_NAME[after.form]} 升至 ${after.star} 星！`,0xffd65c);
@@ -141,10 +153,7 @@ export class GameScene extends Phaser.Scene{
     const waiting=this.makeUnit(target.x,target.y,after.form,after.star,false,after);
     waiting.root.setScale(.75).setAlpha(0);this.deployedViews.set(id,waiting.root);
     this.spawnBurst(target.x,target.y,after.class);
-    this.tweens.add({targets:waiting.root,scale:1,alpha:1,duration:180,ease:'Back.Out',onComplete:()=>{
-      this.c.completeBallTransfer(id);
-      if(this.c.snapshot().phase==='LAUNCHING')this.time.delayedCall(120,()=>this.spawnCurrentBall());
-    }});
+    this.tweens.add({targets:waiting.root,scale:1,alpha:1,duration:180,ease:'Back.Out',onComplete:()=>{try{this.c.completeBallTransfer(id)}catch(error){console.error(`[GameScene] 转移单位球 ${id} 失败`,error)}}});
   }
 
   private render(state:RunState){
@@ -278,12 +287,19 @@ export class GameScene extends Phaser.Scene{
     this.tweens.add({targets:view,alpha:0,y:590,duration:1400,onComplete:()=>view.destroy()});
   }
   update(_:number,delta:number){
-    if(this.active){
-      const body=this.active.img.body as MatterJS.BodyType,elapsed=this.time.now-this.active.lastLaunch;
-      if(isRelaunchReady(this.active.img.x,this.active.img.y,body.velocity.y,elapsed))this.showRetry();
-      if(this.active.retryRing)this.active.retryRing.setPosition(this.active.img.x,this.active.img.y);
-      if(elapsed>12000&&!this.active.forced){this.active.forced=true;this.active.img.setVelocity((300-this.active.img.x)/45,12);this.toast('引导单位球前往出口')}
-      if(elapsed>15500)this.exitBall(this.active.id);
+    for(const active of this.activeBalls.values()){
+      const body=active.img.body as MatterJS.BodyType|undefined,elapsed=this.time.now-active.lastLaunch;
+      if(!body){this.activeBalls.delete(active.id);continue}
+      const canRetry=isRelaunchReady(active.img.x,active.img.y,body.velocity.y,elapsed);
+      if(canRetry)this.showRetry(active);
+      if(active.retryRing)active.retryRing.setPosition(active.img.x,active.img.y);
+      if(elapsed>12000&&!active.forced){active.forced=true;active.img.setVelocity((300-active.img.x)/45,12);this.toast('引导单位球前往出口')}
+      // 停在出口斜板上（钉区下方、近零速度、且不在重发区）的球，短暂静止后直接结算，避免卡死发射阶段
+      const speed=Math.abs(body.velocity.x)+Math.abs(body.velocity.y);
+      const resting=active.img.y>470&&speed<1.5&&!canRetry;
+      active.stalledSince=resting?(active.stalledSince??this.time.now):undefined;
+      const stalledTooLong=active.stalledSince!==undefined&&this.time.now-active.stalledSince>2500;
+      if(elapsed>15500||stalledTooLong)this.exitBall(active.id);
     }
     if(this.c.snapshot().phase==='BATTLE'){
       this.acc+=Math.min(delta,100);

@@ -12,7 +12,14 @@ export class Hud{
   private hud=document.querySelector<HTMLElement>('#hud')!;
   private modal=document.querySelector<HTMLElement>('#modal-root')!;
   private reduced=localStorage.getItem('pk-reduced')==='1';
-  constructor(private c:GameController){c.subscribe(state=>this.render(state))}
+  private lastLevel:number;
+  private lastXp:number;
+  private lastGold:number;
+  constructor(private c:GameController){
+    const snapshot=c.snapshot();
+    this.lastLevel=snapshot.population.level;this.lastXp=snapshot.population.xp;this.lastGold=snapshot.gold;
+    c.subscribe(state=>this.render(state));
+  }
   private action(fn:()=>void){try{fn()}catch(error){this.toast(error instanceof Error?error.message:'操作失败')}}
   private toast(text:string){const view=document.createElement('div');view.className='toast';view.textContent=text;document.body.append(view);setTimeout(()=>view.remove(),1600)}
 
@@ -30,10 +37,12 @@ export class Hud{
 
   private render(state:RunState){
     const shopPhase=state.phase==='SHOP',progress=populationProgress(state.population);
+    const leveledUp=state.population.level>this.lastLevel,xpGained=state.population.xp>this.lastXp,goldGained=state.gold>this.lastGold;
+    this.lastLevel=state.population.level;this.lastXp=state.population.xp;this.lastGold=state.gold;
     this.hud.innerHTML=`
       <div class="hud-top">
         <div class="brand">♛ 弹珠王国</div>
-        <div class="hud-chip">● <b>${state.gold}</b></div>
+        <div class="hud-chip gold-chip">● <b>${state.gold}</b></div>
         <div class="hud-chip">第 <b>${state.stage}</b>/10 关 · ${this.c.encounter().name}</div>
         <div class="hud-chip phase">${PHASE_NAME[state.phase]}</div>
         <div class="hud-spacer"></div>
@@ -55,6 +64,10 @@ export class Hud{
       card.addEventListener('dragend',()=>{card.classList.remove('dragging');window.dispatchEvent(new CustomEvent('pk-peg-drag-end'))});
     });
     this.hud.querySelectorAll<HTMLElement>('[data-lock]').forEach(button=>button.addEventListener('click',event=>{event.stopPropagation();this.action(()=>this.c.toggleShopLock(Number(button.dataset.lock)))}));
+    const popBox=this.hud.querySelector<HTMLElement>('.pop-box');
+    if(popBox&&(leveledUp||xpGained)){popBox.classList.add(leveledUp?'pop-level-up':'pop-xp');popBox.addEventListener('animationend',()=>popBox.classList.remove('pop-level-up','pop-xp'),{once:true})}
+    const goldChip=this.hud.querySelector<HTMLElement>('.gold-chip');
+    if(goldChip&&goldGained){goldChip.classList.add('gold-up');goldChip.addEventListener('animationend',()=>goldChip.classList.remove('gold-up'),{once:true})}
     if(state.phase==='RUN_END')this.results(state);else this.modal.innerHTML='';
   }
 

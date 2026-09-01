@@ -18,7 +18,7 @@ export function applyPegHit(result:LaunchResult,type:PegType):LaunchResult{
   const times=result.echoPending&&special?2:1;
   const next:LaunchResult={
     ...result,
-    xp:result.xp+10,
+    xp:result.xp+2,
     echoPending:type==='echo'?true:special?false:result.echoPending,
   };
   if(type==='power')next.attackBonus=Math.min(1,next.attackBonus+.1*times);

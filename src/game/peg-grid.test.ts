@@ -17,7 +17,7 @@ describe('peg grid',()=>{
     result=applyPegHit(result,'echo');
     result=applyPegHit(result,'normal');
     result=applyPegHit(result,'power');
-    expect(result).toMatchObject({xp:30,attackBonus:.2,echoPending:false});
+    expect(result).toMatchObject({xp:6,attackBonus:.2,echoPending:false});
   });
 
   it('keeps echo armed through normal pegs until another special peg',()=>{

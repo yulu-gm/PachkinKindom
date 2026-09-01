@@ -1,13 +1,15 @@
 import{addBallExperience}from'./ball-progression';
 import{createBattle,stepBattle,type BattleEvent,type BattleState}from'./battle';
 import{ENCOUNTERS}from'./encounters';
-import type{Cell,LaunchResult,RunState,SpecialPegType}from'./model';
+import type{BallForm,Cell,LaunchResult,RunState,SpecialPegType,Star}from'./model';
 import{applyPegHit,createLaunchResult}from'./peg-grid';
 import{createRun}from'./run-state';
 import{buyBallFromShop,buyPopulationXp,createShop,rerollShop}from'./shop';
 
 type Listener=(state:RunState)=>void;
-export const stageReward=(stage:number)=>20+5*stage;
+const FORM_TIER:Record<BallForm,number>={warrior:0,knight:1,general:2,mage:0,elementalist:1,archmage:2,archer:0,ranger:1,sharpshooter:2};
+export const enemyBounty=(enemy:{form:BallForm;star:Star})=>Math.min(8,5+FORM_TIER[enemy.form]+enemy.star-1);
+export const stageReward=(stage:number)=>ENCOUNTERS[Math.min(stage-1,ENCOUNTERS.length-1)]!.enemies.reduce((sum,enemy)=>sum+enemyBounty(enemy),0);
 
 export class GameController{
   private state:RunState;
@@ -36,7 +38,7 @@ export class GameController{
   }
 
   recordPegHit(ballId:string,slotId:number){
-    if(this.state.phase!=='LAUNCHING'||this.state.launchQueue[0]!==ballId)throw new Error('这颗球当前不可计分');
+    if(this.state.phase!=='LAUNCHING'||!this.state.launchQueue.includes(ballId)||this.state.transferredBallIds.includes(ballId))throw new Error('这颗球当前不可计分');
     const peg=this.state.pegGrid[slotId];
     if(!peg)throw new Error('钉位不存在');
     const current=this.state.launchResults[ballId]??createLaunchResult(ballId);
@@ -47,21 +49,22 @@ export class GameController{
   }
 
   finishBallLaunch(ballId:string){
-    if(this.state.phase!=='LAUNCHING'||this.state.launchQueue[0]!==ballId)throw new Error('发射顺序错误');
+    if(this.state.phase!=='LAUNCHING'||!this.state.launchQueue.includes(ballId)||this.state.transferredBallIds.includes(ballId))throw new Error('发射顺序错误');
     const result=this.state.launchResults[ballId]??createLaunchResult(ballId);
     this.state={
-      ...this.state,phase:'TRANSFERRING',
+      ...this.state,
       balls:this.state.balls.map(ball=>ball.id===ballId?addBallExperience(ball,result.xp):ball),
+      transferredBallIds:[...this.state.transferredBallIds,ballId],
     };
     this.emit();
   }
 
   completeBallTransfer(ballId:string){
-    if(this.state.phase!=='TRANSFERRING'||this.state.launchQueue[0]!==ballId)throw new Error('转移顺序错误');
-    const launchQueue=this.state.launchQueue.slice(1);
-    const transferredBallIds=[...this.state.transferredBallIds,ballId];
+    if(this.state.phase!=='LAUNCHING'||!this.state.launchQueue.includes(ballId)||!this.state.transferredBallIds.includes(ballId))throw new Error('转移顺序错误');
+    const launchQueue=this.state.launchQueue.filter(id=>id!==ballId);
+    const transferredBallIds=this.state.transferredBallIds;
     if(launchQueue.length){
-      this.state={...this.state,phase:'LAUNCHING',launchQueue,transferredBallIds};
+      this.state={...this.state,launchQueue,transferredBallIds};
     }else{
       const encounter=this.encounter();
       const enemies=encounter.enemies.map((enemy,index)=>({id:`e${this.state.stage}-${index}`,...enemy}));

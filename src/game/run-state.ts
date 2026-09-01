@@ -12,7 +12,7 @@ const LEGAL:Record<Phase,Phase[]>={
 };
 
 export const createRun=(seed:number):RunState=>({
-  seed,phase:'SHOP',gold:50,stage:1,nextId:2,
+  seed,phase:'SHOP',gold:0,stage:1,nextId:2,
   balls:[createBall('b1','warrior',{row:1,col:1})],
   pegGrid:GRID_SLOTS.map(slot=>({...slot})),
   shop:createShop(seed),

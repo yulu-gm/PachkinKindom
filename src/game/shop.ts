@@ -5,14 +5,15 @@ export const POP_THRESHOLDS=[0,4,10,18,30,46,66,90]as const;
 const BALLS:readonly BallClass[]=['warrior','mage','archer'];
 const PEGS:readonly SpecialPegType[]=['power','haste','guard','spring','echo'];
 export const PEG_PRICES:Record<SpecialPegType,number>={power:4,haste:4,guard:5,spring:5,echo:6};
+export const BALL_PRICE=5;
 const pick=<T>(values:readonly T[],seed:number)=>values[Math.abs(seed)%values.length]!;
 const slot=(item:ShopItem):ShopSlot=>({item,locked:false,sold:false});
 
 export function rollSlots(seed:number):ShopSlot[]{
   const pegA=pick(PEGS,seed*5+2),pegB=pick(PEGS,seed*7+3);
   return[
-    slot({kind:'ball',ballClass:pick(BALLS,seed),price:5}),
-    slot({kind:'ball',ballClass:pick(BALLS,seed*3+1),price:5}),
+    slot({kind:'ball',ballClass:pick(BALLS,seed),price:BALL_PRICE}),
+    slot({kind:'ball',ballClass:pick(BALLS,seed*3+1),price:BALL_PRICE}),
     slot({kind:'peg',pegType:pegA,price:PEG_PRICES[pegA]}),
     slot({kind:'peg',pegType:pegB,price:PEG_PRICES[pegB]}),
   ];
