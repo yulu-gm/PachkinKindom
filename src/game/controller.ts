@@ -39,10 +39,11 @@ export class GameController{
     if(this.state.phase!=='LAUNCHING'||this.state.launchQueue[0]!==ballId)throw new Error('这颗球当前不可计分');
     const peg=this.state.pegGrid[slotId];
     if(!peg)throw new Error('钉位不存在');
-    const result=applyPegHit(this.state.launchResults[ballId]??createLaunchResult(ballId),peg.type);
+    const current=this.state.launchResults[ballId]??createLaunchResult(ballId);
+    const springPower=peg.type==='spring'?(current.echoPending?2:1):0;
+    const result=applyPegHit(current,peg.type);
     this.state={...this.state,launchResults:{...this.state.launchResults,[ballId]:result}};
-    this.emit();
-    return{result,spring:peg.type==='spring'};
+    return{result,springPower};
   }
 
   finishBallLaunch(ballId:string){

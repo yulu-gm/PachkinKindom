@@ -1,31 +1,297 @@
-import Phaser from'phaser';import type{GameController}from'../../game/controller';import type{BattleEvent,BattleState,Fighter}from'../../game/battle';import type{Rarity,RunState,UnitKind}from'../../game/model';import{RARITY_WIDTH}from'../../game/economy';import{rarityForKind}from'../../game/unit-defs';import{isRelaunchReady,PEG_LAYOUT,TRACK}from'../pachinko/geometry';
-type Role='soldier'|'slime';type UnitView={root:Phaser.GameObjects.Container;sprite:Phaser.GameObjects.Sprite;ring:Phaser.GameObjects.Ellipse;barFill:Phaser.GameObjects.Rectangle;role:Role};
-const RC:Record<Rarity,number>={white:0xe8e8e8,blue:0x48aaff,purple:0xbd61ff,orange:0xffaa42,red:0xff4058};const RN:Record<Rarity,string>={white:'白',blue:'蓝',purple:'紫',orange:'橙',red:'红'};const KN:Record<UnitKind,string>={guard:'盾',swordsman:'剑',axeman:'斧',longbow:'弓',crossbow:'弩',slinger:'投'};
-type ActiveBall={img:Phaser.Physics.Matter.Image,lastLaunch:number,nudged:boolean,retryReady:boolean,retryRing?:Phaser.GameObjects.Arc};
-export class GameScene extends Phaser.Scene{private c!:GameController;private balls=new Map<string,ActiveBall>();private pocketBodies:any[]=[];private pocketViews:Phaser.GameObjects.GameObject[]=[];private unitViews:Phaser.GameObjects.GameObject[]=[];private battleViews=new Map<string,UnitView>();private dying=new Set<string>();private selected?:string;private reduced=false;private acc=0;private unsub?:()=>void;
-constructor(){super('game')}create():void{this.c=this.registry.get('controller')as GameController;this.input.mouse?.disableContextMenu();this.drawShell();this.buildMachine();this.drawBoard();this.matter.world.on('collisionstart',(e:any)=>this.collide(e));const launch=(e:Event)=>this.launch((e as CustomEvent<'single'|'five'>).detail);window.addEventListener('pk-launch',launch);window.addEventListener('pk-motion',(e:Event)=>this.reduced=(e as CustomEvent<boolean>).detail);this.events.once('shutdown',()=>{window.removeEventListener('pk-launch',launch);this.unsub?.()});this.unsub=this.c.subscribe(s=>this.render(s));document.addEventListener('visibilitychange',()=>{if(document.hidden)this.scene.pause();else if(this.scene.isPaused())this.scene.resume()});this.qaCapture()}
-private drawShell(){this.add.rectangle(332,328,650,640,0x182a36).setStrokeStyle(6,0xd2a456);this.add.rectangle(972,328,610,640,0x183126).setStrokeStyle(6,0xd2a456);this.add.text(332,16,'♛ 王室征兵机',{fontFamily:'monospace',fontSize:'22px',color:'#ffe1a0'}).setOrigin(.5,0);this.add.text(972,16,'⚔ 王国战棋场',{fontFamily:'monospace',fontSize:'22px',color:'#ffe1a0'}).setOrigin(.5,0);this.add.text(332,50,'点击单发 / 五连，弹簧会自动使用当前力度',{fontFamily:'monospace',fontSize:'13px',color:'#9ec7d3'}).setOrigin(.5,0)}
-private buildMachine(){const g=TRACK,addWall=(x:number,y:number,w:number,h:number)=>this.matter.add.rectangle(x,y,w,h,{isStatic:true,label:'wall',friction:.02,restitution:.75});addWall(g.leftWallX,330,18,540);addWall(g.outerWallX,330,18,540);const topWidth=g.topBoundaryRight-g.leftWallX;addWall(g.leftWallX+topWidth/2,g.topY,topWidth,16);addWall(g.innerRailX,(g.innerRailTop+g.innerRailBottom)/2,14,g.innerRailBottom-g.innerRailTop);addWall((g.innerRailX+g.outerWallX)/2,g.launchFloorY,g.outerWallX-g.innerRailX,14);this.matter.add.rectangle(g.guide.x,g.guide.y,g.guide.width,g.guide.height,{isStatic:true,label:'guide',angle:g.guide.angle,restitution:.78});for(const row of PEG_LAYOUT)for(const peg of row){this.add.circle(peg.x,peg.y,6,0xdab15f).setStrokeStyle(2,0x71471f);this.matter.add.circle(peg.x,peg.y,6,{isStatic:true,label:'peg',restitution:.88})}this.add.rectangle((g.innerRailX+g.outerWallX)/2,350,g.outerWallX-g.innerRailX-10,430,0xd9b46a,.12).setStrokeStyle(2,0x6f4925);this.add.rectangle(g.innerRailX,(g.innerRailTop+g.innerRailBottom)/2,14,g.innerRailBottom-g.innerRailTop,0x9b6d31).setStrokeStyle(3,0xf2c96f);this.add.rectangle(g.guide.x,g.guide.y,g.guide.width,g.guide.height,0xc99a4c).setRotation(g.guide.angle).setStrokeStyle(3,0xffd77c);this.add.text(620,330,'发\n射\n轨\n道',{fontFamily:'monospace',fontSize:'13px',color:'#e8c87d',align:'center'}).setOrigin(.5);this.rebuildPockets(this.c.layout)}
-private rebuildPockets(layout:Rarity[],animate=false){for(const b of this.pocketBodies)this.matter.world.remove(b);for(const v of this.pocketViews)v.destroy();this.pocketBodies=[];this.pocketViews=[];let x=35;const total=565;for(const rarity of layout){const w=total*RARITY_WIDTH[rarity]/100,center=x+w/2;const rect=this.add.rectangle(center,596,w-3,70,0x211a20).setStrokeStyle(4,RC[rarity]);const txt=this.add.text(center,587,`${RN[rarity]}\n盲盒`,{align:'center',fontFamily:'monospace',fontSize:w<55?'11px':'15px',color:'#ffffff'}).setOrigin(.5);const body=this.matter.add.rectangle(center,596,w-3,70,{isStatic:true,isSensor:true,label:`pocket:${rarity}`});this.pocketBodies.push(body);this.pocketViews.push(rect,txt);if(animate)this.pocketSmoke(center,596,rarity);x+=w}}
-private pocketSmoke(x:number,y:number,rarity:Rarity){const count=this.reduced?5:11,smoke=[0xf2ede0,0xcfc9bd,0xa9a39b];for(let i=0;i<count;i++){const angle=Phaser.Math.FloatBetween(0,Math.PI*2),distance=Phaser.Math.Between(16,34),puff=this.add.circle(x+Phaser.Math.Between(-5,5),y+Phaser.Math.Between(-4,4),Phaser.Math.Between(6,11),smoke[i%smoke.length]!,.9).setDepth(14);this.tweens.add({targets:puff,x:x+Math.cos(angle)*distance,y:y+Math.sin(angle)*distance,scale:Phaser.Math.FloatBetween(1.25,1.75),alpha:0,duration:Phaser.Math.Between(390,500),ease:'Cubic.Out',onComplete:()=>puff.destroy()});if(i%3===0){const star=this.add.image(x,y,'spark').setTint(RC[rarity]).setScale(.35).setDepth(15);this.tweens.add({targets:star,x:x+Math.cos(angle)*distance*1.15,y:y+Math.sin(angle)*distance*1.15,scale:0,alpha:0,duration:430,onComplete:()=>star.destroy()})}}}
-private launch(mode:'single'|'five'){try{const shot=this.c.buy(mode);this.rebuildPockets(shot.layout,true);const power=20+Math.sin(this.time.now/520)*2;shot.ids.forEach((id,i)=>this.time.delayedCall(i*200,()=>{const img=this.matter.add.image(TRACK.spawn.x,TRACK.spawn.y,'ball').setCircle(TRACK.spawn.radius).setBounce(.82).setFriction(.001).setFrictionAir(.002).setDepth(5);(img.body as any).label=`ball:${id}`;const ball:ActiveBall={img,lastLaunch:this.time.now,nudged:false,retryReady:false};this.balls.set(id,ball);img.on('pointerdown',()=>this.relaunch(id));this.fire(ball,power*(1+(i-2)*.008))}))}catch(e){this.toast(e instanceof Error?e.message:'无法发射')}}
-private fire(ball:ActiveBall,power=20+Math.sin(this.time.now/520)*2){this.clearRetry(ball);ball.img.setAngularVelocity(0);ball.img.setVelocity(Phaser.Math.FloatBetween(-.08,.08),-power);ball.lastLaunch=this.time.now;ball.nudged=false}
-private relaunch(id:string){const ball=this.balls.get(id);if(!ball||!ball.retryReady)return;this.fire(ball);this.spark(ball.img.x,ball.img.y);this.toast('再次发射！')}
-private showRetry(ball:ActiveBall){ball.retryReady=true;ball.img.setInteractive({useHandCursor:true});const ring=this.add.circle(ball.img.x,ball.img.y,15,0xffd36a,0).setStrokeStyle(2,0xffd36a).setDepth(4);ball.retryRing=ring;this.tweens.add({targets:ring,alpha:{from:.35,to:1},scale:{from:.9,to:1.25},duration:520,yoyo:true,repeat:-1})}
-private clearRetry(ball:ActiveBall){ball.retryReady=false;ball.img.disableInteractive();if(ball.retryRing){this.tweens.killTweensOf(ball.retryRing);ball.retryRing.destroy();ball.retryRing=undefined}}
-private collide(e:any){for(const p of e.pairs as any[]){const labels=[p.bodyA.label as string,p.bodyB.label as string],ballLabel=labels.find(x=>x.startsWith('ball:')),pocket=labels.find(x=>x.startsWith('pocket:'));if(ballLabel&&pocket){const id=ballLabel.slice(5),rarity=pocket.slice(7)as Rarity;this.settle(id,rarity)}else if(ballLabel&&labels.includes('peg'))this.spark((p.bodyA.position.x+p.bodyB.position.x)/2,(p.bodyA.position.y+p.bodyB.position.y)/2)}}
-private spark(x:number,y:number){for(let i=0;i<(this.reduced?2:5);i++){const s=this.add.image(x,y,'spark').setTint(0xffd36a).setScale(.4).setDepth(9);this.tweens.add({targets:s,x:x+Phaser.Math.Between(-16,16),y:y+Phaser.Math.Between(-16,12),alpha:0,duration:220,onComplete:()=>s.destroy()})}}
-private settle(id:string,rarity:Rarity){const b=this.balls.get(id);if(!b)return;this.balls.delete(id);this.clearRetry(b);b.img.destroy();this.c.settleBall(id,rarity);const x=330,y=530,t=this.add.text(x,y,`${RN[rarity]}色盲盒！`,{fontFamily:'monospace',fontSize:rarity==='red'?'34px':'24px',fontStyle:'bold',color:`#${RC[rarity].toString(16).padStart(6,'0')}`,stroke:'#160f15',strokeThickness:6}).setOrigin(.5).setDepth(20);if(!this.reduced&&['purple','orange','red'].includes(rarity))this.cameras.main.shake(rarity==='red'?220:120,rarity==='red'?.012:.006);this.tweens.add({targets:t,y:y-95,scale:rarity==='red'?1.35:1,alpha:0,duration:rarity==='red'?1200:650,onComplete:()=>t.destroy()})}
-private drawBoard(){for(let row=0;row<4;row++)for(let col=0;col<6;col++){const x=708+col*90,y=88+row*88,r=this.add.rectangle(x+43,y+41,84,82,(row+col)%2?0x625b43:0x817653).setStrokeStyle(2,col<3?0x6fa3b0:0xad6a6a).setInteractive({useHandCursor:true});r.on('pointerdown',()=>{if(this.selected)try{this.c.place(this.selected,{row:row as 0|1|2|3,col:col as 0|1|2|3|4|5});this.selected=undefined}catch(e){this.toast(e instanceof Error?e.message:'不能放这里')}})}this.add.text(974,452,'备战席 · 点击单位后再点击左半区格子布阵',{fontFamily:'monospace',fontSize:'14px',color:'#d9c58e'}).setOrigin(.5)}
-private clearUnits(){for(const v of this.unitViews)v.destroy();this.unitViews=[]}
-private unit(x:number,y:number,label:string,color:number,enemy=false,stars=1,hp=1,scale=1):UnitView{const role:Role=enemy?'slime':'soldier',s=role==='slime'?4:3,ring=this.add.ellipse(0,28,36,14,color,.25).setStrokeStyle(3,color),barBg=this.add.rectangle(0,-38,50,5,0x1c1517),barFill=this.add.rectangle(-25+25*hp,-38,50*hp,5,0x67d46f),sprite=this.add.sprite(0,-4,`${role}-idle`).setScale(s),text=this.add.text(0,27,label,{fontFamily:'monospace',fontSize:'12px',fontStyle:'bold',color:'#ffffff',stroke:'#160f15',strokeThickness:3}).setOrigin(.5),starText=this.add.text(0,39,'★'.repeat(stars),{fontFamily:'monospace',fontSize:'8px',color:'#ffd66b',stroke:'#160f15',strokeThickness:2}).setOrigin(.5),root=this.add.container(x,y,[ring,barBg,barFill,sprite,text,starText]).setDepth(6).setScale(scale);if(enemy)sprite.setFlipX(true);sprite.on('animationcomplete',(anim:Phaser.Animations.Animation)=>{const k=anim.key as string;if(k===`${role}-attack`||k===`${role}-hurt`)sprite.play(`${role}-idle`,true)});sprite.play(`${role}-idle`,true);return{root,sprite,ring,barFill,role}}
-private attachPrep(view:UnitView,id:string){const s=view.role==='slime'?4:3;view.sprite.setInteractive({hitArea:new Phaser.Geom.Rectangle(48-26/s,48-28/s,52/s,56/s),hitAreaCallback:Phaser.Geom.Rectangle.Contains,useHandCursor:true}).on('pointerdown',(p:Phaser.Input.Pointer)=>{if(p.rightButtonDown())this.c.sell(id);else{this.selected=id;this.render(this.c.snapshot())}})}
-private render(s:RunState){if(s.phase==='BATTLE'){this.renderBattle();return}this.clearUnits();this.clearBattleViews();const enc=this.c.encounter();for(const e of enc.enemies){const ev=this.unit(751+e.col*90,129+e.row*88,KN[e.kind],RC[rarityForKind(e.kind)],true);this.unitViews.push(ev.root)}for(const u of s.units){const color=RC[rarityForKind(u.kind)];if(u.location==='board'&&u.cell){const view=this.unit(751+u.cell.col*90,129+u.cell.row*88,KN[u.kind],color,false,u.star);this.unitViews.push(view.root);this.attachPrep(view,u.id);if(this.selected===u.id)view.ring.setStrokeStyle(6,0xffffff)}else if(u.location==='bench'||u.location==='recruit'){const i=u.location==='bench'?u.benchIndex??0:11,x=723+(i%6)*91,y=500+Math.floor(i/6)*66;const view=this.unit(x,y,KN[u.kind],color,false,u.star,1,.82);this.unitViews.push(view.root);this.attachPrep(view,u.id);if(this.selected===u.id)view.ring.setStrokeStyle(6,0xffffff)}}}
-private spawnBattleUnit(f:Fighter){return this.unit(751+f.col*90,129+f.row*88,KN[f.kind],RC[rarityForKind(f.kind)],f.team==='enemy',f.star,Math.max(0,f.hp/f.maxHp))}
-private startDeath(view:UnitView){view.barFill.setVisible(false);view.ring.setVisible(false);view.sprite.play(`${view.role}-death`);view.sprite.once('animationcomplete',()=>view.root.destroy())}
-private clearBattleViews(){for(const v of this.battleViews.values())v.root.destroy();this.battleViews.clear();this.dying.clear()}
-private renderBattle(){const b=this.c.battleSnapshot();if(!b)return;if(this.unitViews.length)this.clearUnits();for(const f of b.fighters){const view=this.battleViews.get(f.id);if(f.hp>0){const v=view??this.spawnBattleUnit(f);if(!view)this.battleViews.set(f.id,v);const r=Math.max(0,f.hp/f.maxHp);v.barFill.setDisplaySize(50*r,5);v.barFill.setX(-25+25*r)}else if(view){this.battleViews.delete(f.id);this.dying.add(f.id);this.startDeath(view)}else if(!this.dying.has(f.id)){this.dying.add(f.id);this.startDeath(this.spawnBattleUnit(f))}}}
-private playBattleEvents(events:BattleEvent[],battle:BattleState){for(const event of events){if(event.type==='move'){const mv=this.battleViews.get(event.id);if(mv&&event.row!==undefined&&event.col!==undefined){const tx=751+event.col*90,ty=129+event.row*88;mv.sprite.play(`${mv.role}-walk`,true);this.tweens.add({targets:mv.root,x:tx,y:ty,duration:520,onComplete:()=>{if(mv.root.active)mv.sprite.play(`${mv.role}-idle`,true)}})}continue}if(event.type!=='hit'||!event.target)continue;const attacker=battle.fighters.find(f=>f.id===event.id),target=battle.fighters.find(f=>f.id===event.target);if(!attacker||!target)continue;const av=this.battleViews.get(event.id),tv=this.battleViews.get(event.target);if(av)av.sprite.play(`${av.role}-attack`,true);if(tv)tv.sprite.play(`${tv.role}-hurt`,true);const ax=751+attacker.col*90,ay=129+attacker.row*88,tx=751+target.col*90,ty=129+target.row*88,angle=Math.atan2(ty-ay,tx-ax);const attackRing=this.add.circle(ax,ay,24,0xffd76a,.15).setStrokeStyle(4,0xffe8a1).setDepth(18),streak=this.add.rectangle(ax,ay,30,7,0xffd15c,.95).setRotation(angle).setDepth(19);this.tweens.add({targets:attackRing,scale:1.55,alpha:0,duration:210,ease:'Cubic.Out',onComplete:()=>attackRing.destroy()});this.tweens.add({targets:streak,x:tx,y:ty,scaleX:.35,alpha:0,duration:170,ease:'Cubic.In',onComplete:()=>streak.destroy()});const impact=this.add.circle(tx,ty,18,0xffffff,.55).setStrokeStyle(5,0xff526b).setDepth(20),damage=this.add.text(tx,ty-25,`-${event.amount??0}`,{fontFamily:'monospace',fontSize:'18px',fontStyle:'bold',color:'#fff2dc',stroke:'#6d1628',strokeThickness:4}).setOrigin(.5).setDepth(22);this.tweens.add({targets:impact,scale:1.9,alpha:0,duration:260,ease:'Cubic.Out',onComplete:()=>impact.destroy()});this.tweens.add({targets:damage,y:ty-58,alpha:0,scale:1.2,duration:520,ease:'Cubic.Out',onComplete:()=>damage.destroy()});this.spark(tx,ty);if(!this.reduced)this.cameras.main.shake(55,.0025)}}
-update(_:number,delta:number){for(const[id,b]of this.balls){const body=b.img.body as any,speed=body&&'speed'in body?body.speed:999,elapsed=this.time.now-b.lastLaunch,ready=isRelaunchReady(b.img.x,b.img.y,body?.velocity?.y??-999,elapsed);if(ready&&!b.retryReady)this.showRetry(b);else if(!ready&&b.retryReady)this.clearRetry(b);if(b.retryRing)b.retryRing.setPosition(b.img.x,b.img.y);if(elapsed>2000&&!b.nudged&&speed<.25&&!b.retryReady){b.img.applyForce(new Phaser.Math.Vector2(Phaser.Math.FloatBetween(-.004,.004),-.004));b.nudged=true}if(elapsed>10000)this.settle(id,this.c.layout[2]??'white')}if(this.c.snapshot().phase==='BATTLE'){this.acc+=Math.min(delta,100);while(this.acc>=50){const events=this.c.tickBattle(50),battle=this.c.battleSnapshot();if(battle&&events.length)this.playBattleEvents(events,battle);this.acc-=50}if(this.c.snapshot().phase==='BATTLE')this.renderBattle()}}
-private toast(text:string){const t=this.add.text(640,620,text,{fontFamily:'monospace',fontSize:'17px',backgroundColor:'#211318',padding:{x:12,y:7},color:'#ffd68a'}).setOrigin(.5).setDepth(30);this.tweens.add({targets:t,alpha:0,y:590,duration:1400,onComplete:()=>t.destroy()})}
-private qaCapture(){if(!import.meta.env.DEV)return;const log=(message:string)=>fetch('http://127.0.0.1:63480/log',{method:'POST',headers:{'Content-Type':'text/plain'},body:message});fetch('http://127.0.0.1:63480/ready').then(r=>{if(!r.ok)return;log('ready');const snap=(name:string,delay:number)=>this.time.delayedCall(delay,()=>this.game.renderer.snapshot((image:any)=>{log(`${name}:${image?.constructor?.name??typeof image}`);if(image instanceof HTMLImageElement)fetch(`http://127.0.0.1:63480/capture/${name}`,{method:'POST',headers:{'Content-Type':'text/plain'},body:image.src})}));const shot=this.c.buy('single');this.rebuildPockets(shot.layout,true);snap('blindbox-smoke',150);this.time.delayedCall(650,()=>{this.c.settleBall(shot.ids[0]!,'red');const unit=this.c.snapshot().units[0];if(!unit)return;this.c.place(unit.id,{row:0,col:2});this.c.startBattle()});snap('battle-hit',730);snap('battle-impact',850)}).catch(error=>log(`error:${String(error)}`))}}
+import Phaser from'phaser';
+import{nextExperienceCost}from'../../game/ball-progression';
+import type{BattleEvent,BattleState}from'../../game/battle';
+import type{BallClass,BallForm,BallUnit,PegType,RunState}from'../../game/model';
+import type{GameController}from'../../game/controller';
+import{isRelaunchReady,TRACK}from'../pachinko/geometry';
+
+type ActiveBall={id:string;img:Phaser.Physics.Matter.Image;lastLaunch:number;retryReady:boolean;retryRing?:Phaser.GameObjects.Arc;forced:boolean};
+type UnitView={root:Phaser.GameObjects.Container;sprite:Phaser.GameObjects.Sprite;bar:Phaser.GameObjects.Rectangle;shield:Phaser.GameObjects.Arc;role:'soldier'|'slime'};
+const CLASS_COLOR:Record<BallClass,number>={warrior:0xd45846,mage:0x726de8,archer:0x55a863};
+const PEG_COLOR:Record<PegType,number>={normal:0xdab15f,power:0xff5b57,haste:0x5bc8ff,guard:0x77d7b0,echo:0xc57bff,spring:0xffe35b};
+const PEG_SYMBOL:Record<PegType,string>={normal:'',power:'攻',haste:'速',guard:'盾',echo:'双',spring:'弹'};
+const FORM_NAME:Record<BallForm,string>={warrior:'战士',knight:'骑士',general:'将军',mage:'法师',elementalist:'元素使',archmage:'大法师',archer:'弓箭手',ranger:'游侠',sharpshooter:'神射手'};
+const BOARD_X=708,BOARD_Y=88,CELL_W=90,CELL_H=88;
+const boardPoint=(row:number,col:number)=>({x:BOARD_X+43+col*CELL_W,y:BOARD_Y+41+row*CELL_H});
+
+export class GameScene extends Phaser.Scene{
+  private c!:GameController;
+  private active?:ActiveBall;
+  private pegViews=new Map<number,{ring:Phaser.GameObjects.Arc;text:Phaser.GameObjects.Text}>();
+  private prepViews:Phaser.GameObjects.GameObject[]=[];
+  private battleViews=new Map<string,UnitView>();
+  private transferViews=new Map<string,Phaser.GameObjects.Container>();
+  private transferring=new Set<string>();
+  private reduced=false;
+  private acc=0;
+  private unsub?:()=>void;
+  private dragPegSlot?:number;
+  private dragMarker?:Phaser.GameObjects.Arc;
+  private canvas?:HTMLCanvasElement;
+
+  constructor(){super('game')}
+  create():void{
+    this.c=this.registry.get('controller')as GameController;
+    this.input.mouse?.disableContextMenu();
+    this.drawShell();this.buildMachine();this.drawBoard();
+    this.matter.world.on('collisionstart',(event:any)=>this.collide(event));
+    const start=()=>this.startExpedition();
+    const motion=(event:Event)=>this.reduced=(event as CustomEvent<boolean>).detail;
+    const dragStart=(event:Event)=>this.dragPegSlot=(event as CustomEvent<number>).detail;
+    const dragEnd=()=>this.clearPegDrag();
+    window.addEventListener('pk-start',start);window.addEventListener('pk-motion',motion);
+    window.addEventListener('pk-peg-drag-start',dragStart);window.addEventListener('pk-peg-drag-end',dragEnd);
+    this.canvas=this.game.canvas;
+    this.canvas.addEventListener('dragover',event=>this.onCanvasDrag(event));
+    this.canvas.addEventListener('drop',event=>this.onCanvasDrop(event));
+    this.input.on('drag',(_:Phaser.Input.Pointer,view:Phaser.GameObjects.Container,dragX:number,dragY:number)=>{if(this.c.snapshot().phase==='SHOP'&&view.getData('ballId'))view.setPosition(dragX,dragY)});
+    this.input.on('dragend',(_:Phaser.Input.Pointer,view:Phaser.GameObjects.Container)=>this.dropFormation(view));
+    this.unsub=this.c.subscribe(state=>this.render(state));
+    this.events.once('shutdown',()=>{window.removeEventListener('pk-start',start);window.removeEventListener('pk-motion',motion);window.removeEventListener('pk-peg-drag-start',dragStart);window.removeEventListener('pk-peg-drag-end',dragEnd);this.unsub?.()});
+  }
+
+  private drawShell(){
+    this.add.rectangle(332,328,650,640,0x182a36).setStrokeStyle(6,0xd2a456);
+    this.add.rectangle(972,328,610,640,0x183126).setStrokeStyle(6,0xd2a456);
+    this.add.text(332,14,'♛ 单位球锻造机',{fontFamily:'monospace',fontSize:'22px',color:'#ffe1a0'}).setOrigin(.5,0);
+    this.add.text(972,14,'⚔ 王国战棋场',{fontFamily:'monospace',fontSize:'22px',color:'#ffe1a0'}).setOrigin(.5,0);
+    this.add.text(332,46,'撞钉获得永久经验 | 特殊钉赋予本轮战斗效果',{fontFamily:'monospace',fontSize:'13px',color:'#9ec7d3'}).setOrigin(.5,0);
+  }
+
+  private buildMachine(){
+    const addWall=(x:number,y:number,w:number,h:number,angle=0)=>this.matter.add.rectangle(x,y,w,h,{isStatic:true,label:'wall',angle,friction:.02,restitution:.76});
+    addWall(TRACK.leftWallX,320,18,500);addWall(TRACK.outerWallX,330,18,540);
+    addWall((TRACK.leftWallX+TRACK.topBoundaryRight)/2,TRACK.topY,TRACK.topBoundaryRight-TRACK.leftWallX,16);
+    addWall(TRACK.innerRailX,(TRACK.innerRailTop+TRACK.innerRailBottom)/2,14,TRACK.innerRailBottom-TRACK.innerRailTop);
+    addWall((TRACK.innerRailX+TRACK.outerWallX)/2,TRACK.launchFloorY,TRACK.outerWallX-TRACK.innerRailX,14);
+    addWall(TRACK.guide.x,TRACK.guide.y,TRACK.guide.width,TRACK.guide.height,TRACK.guide.angle);
+    addWall(105,522,170,12,.16);addWall(495,522,170,12,-.16);
+    this.add.rectangle(TRACK.innerRailX,(TRACK.innerRailTop+TRACK.innerRailBottom)/2,14,TRACK.innerRailBottom-TRACK.innerRailTop,0x9b6d31).setStrokeStyle(3,0xf2c96f);
+    this.add.rectangle(TRACK.guide.x,TRACK.guide.y,TRACK.guide.width,TRACK.guide.height,0xc99a4c).setRotation(TRACK.guide.angle).setStrokeStyle(3,0xffd77c);
+    this.add.rectangle(622,350,38,420,0xd9b46a,.12).setStrokeStyle(2,0x6f4925);
+    this.add.text(622,330,'发\n射\n轨\n道',{fontFamily:'monospace',fontSize:'12px',color:'#e8c87d',align:'center'}).setOrigin(.5);
+    for(const slot of this.c.snapshot().pegGrid){
+      const ring=this.add.circle(slot.x,slot.y,10,PEG_COLOR[slot.type]).setStrokeStyle(3,0x71471f).setDepth(2);
+      const text=this.add.text(slot.x,slot.y,PEG_SYMBOL[slot.type],{fontFamily:'monospace',fontSize:'10px',fontStyle:'bold',color:'#ffffff',stroke:'#18222b',strokeThickness:2}).setOrigin(.5).setDepth(3);
+      this.matter.add.circle(slot.x,slot.y,9,{isStatic:true,label:`peg:${slot.id}`,restitution:.9});
+      this.pegViews.set(slot.id,{ring,text});
+    }
+    this.matter.add.rectangle(TRACK.exit.x,TRACK.exit.y,TRACK.exit.width,TRACK.exit.height,{isStatic:true,isSensor:true,label:'exit'});
+    this.add.rectangle(TRACK.exit.x,TRACK.exit.y,TRACK.exit.width,8,0x79d9ca,.25).setStrokeStyle(2,0x9af6dd);
+    this.add.text(300,558,'▼ 单位转移出口 ▼',{fontFamily:'monospace',fontSize:'11px',color:'#9af6dd'}).setOrigin(.5,0);
+    const lane=this.add.graphics().setDepth(1);lane.lineStyle(14,0x14252b,.95).beginPath().moveTo(300,580).lineTo(620,610).lineTo(700,610).lineTo(745,560).strokePath();
+    lane.lineStyle(3,0x75e5d2,.8).beginPath().moveTo(300,580).lineTo(620,610).lineTo(700,610).lineTo(745,560).strokePath();
+    this.add.text(632,590,'单位转移轨道 →',{fontFamily:'monospace',fontSize:'11px',color:'#9af6dd'}).setOrigin(.5);
+  }
+
+  private drawBoard(){
+    for(let row=0;row<4;row++)for(let col=0;col<6;col++){const point=boardPoint(row,col);this.add.rectangle(point.x,point.y,84,82,(row+col)%2?0x625b43:0x817653).setStrokeStyle(2,col<3?0x6fa3b0:0xad6a6a)}
+    this.add.text(837,454,'己方编队区 | 商店阶段可拖动单位球',{fontFamily:'monospace',fontSize:'13px',color:'#b9d9d1'}).setOrigin(.5);
+    this.add.text(1108,454,'敌方区域',{fontFamily:'monospace',fontSize:'13px',color:'#d8a9a0'}).setOrigin(.5);
+  }
+
+  private startExpedition(){try{this.c.beginLaunch();this.spawnCurrentBall()}catch(error){this.toast(error instanceof Error?error.message:'无法开始远征')}}
+  private spawnCurrentBall(){
+    if(this.active||this.c.snapshot().phase!=='LAUNCHING')return;
+    const id=this.c.snapshot().launchQueue[0],ball=this.c.snapshot().balls.find(value=>value.id===id);
+    if(!id||!ball)return;
+    const img=this.matter.add.image(TRACK.spawn.x,TRACK.spawn.y,`${ball.class}-ball`).setCircle(TRACK.spawn.radius).setBounce(.84).setFriction(.001).setFrictionAir(.002).setDepth(8).setInteractive({useHandCursor:true});
+    (img.body as MatterJS.BodyType).label=`ball:${id}`;
+    this.active={id,img,lastLaunch:this.time.now,retryReady:false,forced:false};
+    img.on('pointerdown',()=>this.relaunch());this.fire();
+  }
+  private fire(){
+    if(!this.active)return;
+    this.clearRetry();this.active.img.setAngularVelocity(0).setVelocity(Phaser.Math.FloatBetween(-.08,.08),-21.5);
+    this.active.lastLaunch=this.time.now;this.active.forced=false;
+  }
+  private relaunch(){if(this.active?.retryReady){this.fire();this.burst(this.active.img.x,this.active.img.y,0xffe06b);this.toast('再次发射！')}}
+  private showRetry(){
+    if(!this.active||this.active.retryReady)return;
+    this.active.retryReady=true;
+    const ring=this.add.circle(this.active.img.x,this.active.img.y,18,0xffd36a,0).setStrokeStyle(3,0xffd36a).setDepth(7);
+    this.active.retryRing=ring;this.tweens.add({targets:ring,alpha:{from:.3,to:1},scale:{from:.9,to:1.25},duration:520,yoyo:true,repeat:-1});
+  }
+  private clearRetry(){
+    if(!this.active)return;this.active.retryReady=false;
+    if(this.active.retryRing){this.tweens.killTweensOf(this.active.retryRing);this.active.retryRing.destroy();this.active.retryRing=undefined}
+  }
+  private collide(event:any){
+    for(const pair of event.pairs as any[]){
+      const labels=[pair.bodyA.label as string,pair.bodyB.label as string],ballLabel=labels.find(label=>label.startsWith('ball:'));
+      if(!ballLabel)continue;
+      const id=ballLabel.slice(5),pegLabel=labels.find(label=>label.startsWith('peg:'));
+      if(pegLabel)this.hitPeg(id,Number(pegLabel.slice(4)));
+      if(labels.includes('exit'))this.exitBall(id);
+    }
+  }
+  private hitPeg(id:string,slotId:number){
+    if(!this.active||this.active.id!==id)return;
+    try{
+      const {result,springPower}=this.c.recordPegHit(id,slotId),slot=this.c.snapshot().pegGrid[slotId]!;
+      this.burst(slot.x,slot.y,PEG_COLOR[slot.type]);this.floatText(slot.x,slot.y-8,`+10 EXP${slot.type==='normal'?'':` · ${PEG_SYMBOL[slot.type]}`}`,PEG_COLOR[slot.type]);
+      if(springPower)this.active.img.setVelocity(Phaser.Math.FloatBetween(-3.5,3.5)*springPower,-14-(springPower-1)*6);
+      if(result.xp%50===0&&!this.reduced)this.cameras.main.shake(60,.002);
+    }catch{}
+  }
+  private exitBall(id:string){
+    if(!this.active||this.active.id!==id||this.transferring.has(id))return;
+    this.transferring.add(id);
+    const before=this.c.snapshot().balls.find(ball=>ball.id===id)!,x=this.active.img.x,y=this.active.img.y;
+    this.clearRetry();this.active.img.destroy();this.active=undefined;this.c.finishBallLaunch(id);
+    const after=this.c.snapshot().balls.find(ball=>ball.id===id)!;
+    if(before.form!==after.form)this.banner(`${FORM_NAME[before.form]} 进化为 ${FORM_NAME[after.form]}！`,CLASS_COLOR[after.class]);
+    else if(before.star!==after.star)this.banner(`${FORM_NAME[after.form]} 升至 ${after.star} 星！`,0xffd65c);
+    const token=this.add.image(x,y,`${after.class}-ball`).setDepth(20).setScale(1.05),target=boardPoint(after.cell.row,after.cell.col);
+    this.tweens.chain({targets:token,tweens:[
+      {x:300,y:580,duration:260,ease:'Sine.In'},{x:650,y:610,duration:560,ease:'Sine.InOut'},
+      {x:745,y:560,duration:220,ease:'Sine.Out'},{x:target.x,y:target.y,duration:420,ease:'Back.Out'},
+    ],onComplete:()=>{
+      token.destroy();this.transferring.delete(id);this.c.completeBallTransfer(id);
+      if(this.c.snapshot().phase==='LAUNCHING'){
+        const waiting=this.makeUnit(target.x,target.y,after.form,after.star,false,after);this.transferViews.set(id,waiting.root);
+        this.time.delayedCall(220,()=>this.spawnCurrentBall());
+      }
+    }});
+  }
+
+  private render(state:RunState){
+    for(const slot of state.pegGrid){const view=this.pegViews.get(slot.id);if(view){view.ring.setFillStyle(PEG_COLOR[slot.type]);view.text.setText(PEG_SYMBOL[slot.type])}}
+    if(state.phase==='SHOP')this.renderPrep(state);
+    else if(this.prepViews.length)this.clearPrep();
+    if(state.phase==='BATTLE')this.renderBattle();
+  }
+  private clearPrep(){for(const view of this.prepViews)view.destroy();this.prepViews=[]}
+  private renderPrep(state:RunState){
+    this.clearPrep();this.clearBattle();this.clearTransferViews();
+    for(const enemy of this.c.encounter().enemies){const point=boardPoint(enemy.row,enemy.col),view=this.makeUnit(point.x,point.y,enemy.form,enemy.star,true);view.root.setAlpha(.72);this.prepViews.push(view.root)}
+    for(const ball of state.balls){
+      const point=boardPoint(ball.cell.row,ball.cell.col),view=this.makeUnit(point.x,point.y,ball.form,ball.star,false,ball);
+      view.root.setData('ballId',ball.id).setInteractive(new Phaser.Geom.Rectangle(-40,-48,80,96),Phaser.Geom.Rectangle.Contains);
+      if(view.root.input)view.root.input.cursor='pointer';
+      this.input.setDraggable(view.root);this.prepViews.push(view.root);
+    }
+  }
+
+  private makeUnit(x:number,y:number,form:BallForm,star:number,enemy=false,ball?:BallUnit):UnitView{
+    const role=enemy?'slime':'soldier';
+    const className=ball?.class??(form==='mage'||form==='elementalist'||form==='archmage'?'mage':form==='archer'||form==='ranger'||form==='sharpshooter'?'archer':'warrior');
+    const color=CLASS_COLOR[className];
+    const ring=this.add.ellipse(0,28,52,16,color,.25).setStrokeStyle(3,color),sprite=this.add.sprite(0,-5,`${role}-idle`).setScale(enemy?4:3);
+    const label=this.add.text(0,26,FORM_NAME[form],{fontFamily:'monospace',fontSize:'11px',fontStyle:'bold',color:'#fff',stroke:'#151018',strokeThickness:3}).setOrigin(.5);
+    const stars=this.add.text(0,39,'★'.repeat(star),{fontFamily:'monospace',fontSize:'9px',color:'#ffd765',stroke:'#151018',strokeThickness:2}).setOrigin(.5);
+    const barBg=this.add.rectangle(0,-40,52,6,0x1b1316),bar=this.add.rectangle(0,-40,52,6,0x62d678);
+    const shield=this.add.circle(0,-4,31,0x70d9ff,.1).setStrokeStyle(3,0x70d9ff).setVisible(false);
+    const children:Phaser.GameObjects.GameObject[]=[ring,shield,barBg,bar,sprite,label,stars];
+    if(ball){const cost=nextExperienceCost(ball),xp=this.add.text(0,50,cost?`EXP ${ball.xp}/${cost}`:'MAX',{fontFamily:'monospace',fontSize:'8px',color:'#bcefe6',stroke:'#151018',strokeThickness:2}).setOrigin(.5);children.push(xp)}
+    const root=this.add.container(x,y,children).setDepth(10);
+    if(enemy)sprite.setFlipX(true);
+    sprite.play(`${role}-idle`,true);
+    sprite.on('animationcomplete',(anim:Phaser.Animations.Animation)=>{if(anim.key===`${role}-attack`||anim.key===`${role}-hurt`)sprite.play(`${role}-idle`,true)});
+    return{root,sprite,bar,shield,role};
+  }
+  private dropFormation(view:Phaser.GameObjects.Container){
+    const id=view.getData('ballId')as string|undefined;if(!id)return;
+    const col=Phaser.Math.Clamp(Math.round((view.x-(BOARD_X+43))/CELL_W),0,2),row=Phaser.Math.Clamp(Math.round((view.y-(BOARD_Y+41))/CELL_H),0,3);
+    try{this.c.moveBall(id,{row:row as 0|1|2|3,col:col as 0|1|2})}catch(error){this.toast(error instanceof Error?error.message:'无法布阵');this.renderPrep(this.c.snapshot())}
+  }
+  private onCanvasDrag(event:DragEvent){
+    if(this.dragPegSlot===undefined)return;event.preventDefault();
+    const point=this.canvasPoint(event.clientX,event.clientY),nearest=this.nearestPeg(point.x,point.y);
+    if(!nearest||nearest.distance>34){this.dragMarker?.setVisible(false);return}
+    if(!this.dragMarker)this.dragMarker=this.add.circle(nearest.x,nearest.y,17,0xffffff,.12).setStrokeStyle(3,0xffffff).setDepth(30);
+    this.dragMarker.setPosition(nearest.x,nearest.y).setVisible(true);
+  }
+  private onCanvasDrop(event:DragEvent){
+    if(this.dragPegSlot===undefined)return;event.preventDefault();
+    const point=this.canvasPoint(event.clientX,event.clientY),nearest=this.nearestPeg(point.x,point.y),shopSlot=this.dragPegSlot;
+    try{if(!nearest||nearest.distance>34)throw new Error('请放到发光钉位上');this.c.placePeg(shopSlot,nearest.id);this.burst(nearest.x,nearest.y,0xffffff);this.toast('特殊钉已装配')}catch(error){this.toast(error instanceof Error?error.message:'无法放置')}
+    this.clearPegDrag();
+  }
+  private canvasPoint(clientX:number,clientY:number){const rect=this.canvas!.getBoundingClientRect();return{x:(clientX-rect.left)*1280/rect.width,y:(clientY-rect.top)*656/rect.height}}
+  private nearestPeg(x:number,y:number){return this.c.snapshot().pegGrid.map(slot=>({...slot,distance:Phaser.Math.Distance.Between(x,y,slot.x,slot.y)})).sort((a,b)=>a.distance-b.distance)[0]}
+  private clearPegDrag(){this.dragPegSlot=undefined;if(this.dragMarker){this.dragMarker.destroy();this.dragMarker=undefined}}
+
+  private clearBattle(){for(const view of this.battleViews.values())view.root.destroy();this.battleViews.clear()}
+  private clearTransferViews(){for(const view of this.transferViews.values())view.destroy();this.transferViews.clear()}
+  private renderBattle(){
+    const battle=this.c.battleSnapshot();if(!battle)return;
+    if(this.prepViews.length)this.clearPrep();
+    if(this.transferViews.size)this.clearTransferViews();
+    for(const fighter of battle.fighters){
+      let view=this.battleViews.get(fighter.id);
+      if(fighter.hp>0){
+        if(!view){const point=boardPoint(fighter.row,fighter.col);view=this.makeUnit(point.x,point.y,fighter.form,fighter.star,fighter.team==='enemy');this.battleViews.set(fighter.id,view)}
+        const hp=Math.max(0,fighter.hp/fighter.maxHp);view.bar.setDisplaySize(52*hp,6);view.bar.setX(-26+26*hp);view.shield.setVisible(fighter.shield>0);
+      }else if(view){this.battleViews.delete(fighter.id);view.sprite.play(`${view.role}-death`);this.tweens.add({targets:view.root,alpha:0,duration:700,onComplete:()=>view?.root.destroy()})}
+    }
+  }
+  private playBattleEvents(events:BattleEvent[],battle:BattleState){
+    for(const event of events){
+      if(event.type==='move'){
+        const view=this.battleViews.get(event.id);
+        if(view&&event.row!==undefined&&event.col!==undefined){const point=boardPoint(event.row,event.col);view.sprite.play(`${view.role}-walk`,true);this.tweens.add({targets:view.root,...point,duration:460,onComplete:()=>view?.sprite.play(`${view.role}-idle`,true)})}
+        continue;
+      }
+      if(event.type==='attack'&&event.target){
+        const attacker=this.battleViews.get(event.id);
+        attacker?.sprite.play(`${attacker.role}-attack`,true);
+        if(attacker){const pulse=this.add.circle(attacker.root.x,attacker.root.y,22,0xffdf73,.12).setStrokeStyle(3,0xffdf73).setDepth(24);this.tweens.add({targets:pulse,scale:1.45,alpha:0,duration:180,onComplete:()=>pulse.destroy()})}
+        continue;
+      }
+      if(event.type==='shield-hit'){
+        const target=this.battleViews.get(event.id);
+        if(target){target.shield.setVisible(true).setScale(.7).setAlpha(1);this.tweens.add({targets:target.shield,scale:1.3,alpha:.2,duration:240});this.floatText(target.root.x,target.root.y-40,`护盾 -${event.amount}`,0x70d9ff)}
+        continue;
+      }
+      if(event.type!=='hit'||!event.target)continue;
+      const attacker=battle.fighters.find(fighter=>fighter.id===event.id),target=battle.fighters.find(fighter=>fighter.id===event.target);
+      const targetView=this.battleViews.get(event.target);
+      if(!attacker||!target)continue;
+      targetView?.sprite.play(`${targetView.role}-hurt`,true);
+      const from=boardPoint(attacker.row,attacker.col),to=boardPoint(target.row,target.col),angle=Math.atan2(to.y-from.y,to.x-from.x);
+      const slash=this.add.rectangle(from.x,from.y,34,7,0xffdf73,.95).setRotation(angle).setDepth(25);
+      this.tweens.add({targets:slash,x:to.x,y:to.y,scaleX:.3,alpha:0,duration:150,onComplete:()=>slash.destroy()});
+      this.burst(to.x,to.y,0xff526b);this.floatText(to.x,to.y-25,`-${event.amount??0}`,0xff8b84);
+      if(!this.reduced)this.cameras.main.shake(55,.0025);
+    }
+  }
+
+  private burst(x:number,y:number,color:number){
+    for(let index=0;index<(this.reduced?3:7);index++){
+      const spark=this.add.image(x,y,'spark').setTint(color).setScale(.4).setDepth(28);
+      this.tweens.add({targets:spark,x:x+Phaser.Math.Between(-22,22),y:y+Phaser.Math.Between(-22,16),alpha:0,scale:0,duration:260,onComplete:()=>spark.destroy()});
+    }
+  }
+  private floatText(x:number,y:number,text:string,color:number){
+    const view=this.add.text(x,y,text,{fontFamily:'monospace',fontSize:'13px',fontStyle:'bold',color:`#${color.toString(16).padStart(6,'0')}`,stroke:'#111820',strokeThickness:4}).setOrigin(.5).setDepth(30);
+    this.tweens.add({targets:view,y:y-34,alpha:0,duration:620,onComplete:()=>view.destroy()});
+  }
+  private banner(text:string,color:number){
+    const view=this.add.text(640,95,text,{fontFamily:'monospace',fontSize:'26px',fontStyle:'bold',color:`#${color.toString(16).padStart(6,'0')}`,stroke:'#131018',strokeThickness:7}).setOrigin(.5).setDepth(40).setScale(.6);
+    this.tweens.add({targets:view,scale:1.1,yoyo:true,hold:500,alpha:{from:1,to:.95},duration:260,onComplete:()=>view.destroy()});
+    if(!this.reduced)this.cameras.main.shake(130,.006);
+  }
+  private toast(text:string){
+    const view=this.add.text(640,620,text,{fontFamily:'monospace',fontSize:'16px',backgroundColor:'#211318',padding:{x:12,y:7},color:'#ffd68a'}).setOrigin(.5).setDepth(50);
+    this.tweens.add({targets:view,alpha:0,y:590,duration:1400,onComplete:()=>view.destroy()});
+  }
+  update(_:number,delta:number){
+    if(this.active){
+      const body=this.active.img.body as MatterJS.BodyType,elapsed=this.time.now-this.active.lastLaunch;
+      if(isRelaunchReady(this.active.img.x,this.active.img.y,body.velocity.y,elapsed))this.showRetry();
+      if(this.active.retryRing)this.active.retryRing.setPosition(this.active.img.x,this.active.img.y);
+      if(elapsed>12000&&!this.active.forced){this.active.forced=true;this.active.img.setVelocity((300-this.active.img.x)/45,12);this.toast('引导单位球前往出口')}
+      if(elapsed>15500)this.exitBall(this.active.id);
+    }
+    if(this.c.snapshot().phase==='BATTLE'){
+      this.acc+=Math.min(delta,100);
+      while(this.acc>=50){
+        const events=this.c.tickBattle(50),battle=this.c.battleSnapshot();
+        if(battle&&events.length)this.playBattleEvents(events,battle);
+        this.acc-=50;
+      }
+      if(this.c.snapshot().phase==='BATTLE')this.renderBattle();
+    }
+  }
+}

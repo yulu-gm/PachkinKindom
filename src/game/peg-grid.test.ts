@@ -19,4 +19,10 @@ describe('peg grid',()=>{
     result=applyPegHit(result,'power');
     expect(result).toMatchObject({xp:30,attackBonus:.2,echoPending:false});
   });
+
+  it('keeps echo armed through normal pegs until another special peg',()=>{
+    let result=applyPegHit(createLaunchResult('b1'),'echo');
+    result=applyPegHit(result,'normal');
+    expect(result.echoPending).toBe(true);
+  });
 });
