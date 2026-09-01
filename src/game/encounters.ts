@@ -1,2 +1,20 @@
-import type{UnitKind}from'./model';export type Encounter={name:string;scale:number;boss:boolean;enemies:{kind:UnitKind;row:number;col:number}[]};const e=(name:string,scale:number,kinds:UnitKind[],boss=false):Encounter=>({name,scale,boss,enemies:kinds.map((kind,i)=>({kind,row:i%4,col:5-Math.floor(i/4)}))});
-export const ENCOUNTERS:Encounter[]=[e('草原盗匪',.85,['swordsman','slinger','swordsman']),e('石桥守军',1,['guard','swordsman','longbow']),e('森林伏兵',1.15,['axeman','swordsman','longbow','slinger']),e('废塔卫队',1.3,['guard','guard','crossbow','longbow']),e('食人魔营地',1.55,['guard','axeman','axeman','slinger','crossbow'],true),e('矿坑佣兵',1.7,['axeman','axeman','swordsman','crossbow']),e('幽灵城堡',1.9,['guard','swordsman','axeman','longbow','slinger']),e('王室骑士',2.1,['guard','swordsman','axeman','longbow','crossbow']),e('王座前厅',2.35,['guard','guard','longbow','crossbow','crossbow']),e('腐化国王',2.8,['guard','swordsman','axeman','longbow','crossbow','slinger'],true)];
+import type{BallForm,Star}from'./model';
+
+export type Encounter={name:string;scale:number;boss:boolean;enemies:{form:BallForm;star:Star;row:number;col:number}[]};
+const encounter=(name:string,scale:number,forms:BallForm[],boss=false):Encounter=>({
+  name,scale,boss,
+  enemies:forms.map((form,index)=>({form,star:1,row:(index%4)as 0|1|2|3,col:5-Math.floor(index/4)})),
+});
+
+export const ENCOUNTERS:Encounter[]=[
+  encounter('草原盗匪',.65,['warrior']),
+  encounter('石桥守军',.72,['warrior','archer']),
+  encounter('森林伏兵',.78,['knight','archer']),
+  encounter('废塔卫队',.85,['knight','mage','archer']),
+  encounter('食人魔营地',.92,['general','warrior','mage'],true),
+  encounter('矿坑佣兵',1,['knight','knight','ranger']),
+  encounter('幽灵城堡',1.08,['general','elementalist','ranger']),
+  encounter('王室骑士',1.16,['general','knight','elementalist','ranger']),
+  encounter('王座前厅',1.25,['general','general','archmage','sharpshooter']),
+  encounter('腐化国王',1.38,['general','knight','archmage','ranger','sharpshooter'],true),
+];
