@@ -24,4 +24,5 @@ npm run dev
 
 ## 素材
 
-当前原型全部使用程序化像素图形。未来加入 itch.io 素材时必须同步更新 `public/assets/LICENSES.md`。
+- 单位精灵（剑盾士兵、史莱姆）来自 itch.io Free Characters Animations Asset Pack（作者 Oboropixel，可商用、不可再分发），文件位于 `public/assets/sprites/`，许可登记见 `public/assets/LICENSES.md`。
+- 其余图形（弹珠、钉阵、奖励槽、棋盘、粒子）仍为程序化生成。后续加入新素材时必须同步更新 `public/assets/LICENSES.md`。
