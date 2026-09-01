@@ -52,7 +52,7 @@ export class GameScene extends Phaser.Scene{
   private drawShell(){
     this.add.rectangle(332,328,650,640,0x182a36).setStrokeStyle(6,0xd2a456);
     this.add.rectangle(972,328,610,640,0x183126).setStrokeStyle(6,0xd2a456);
-    this.add.text(332,14,'♛ 单位球锻造机',{fontFamily:'monospace',fontSize:'22px',color:'#ffe1a0'}).setOrigin(.5,0);
+    this.add.text(332,14,'♛ 王国训练场',{fontFamily:'monospace',fontSize:'22px',color:'#ffe1a0'}).setOrigin(.5,0);
     this.add.text(972,14,'⚔ 王国战棋场',{fontFamily:'monospace',fontSize:'22px',color:'#ffe1a0'}).setOrigin(.5,0);
     this.add.text(332,46,'撞钉获得永久经验 | 特殊钉赋予本轮战斗效果',{fontFamily:'monospace',fontSize:'13px',color:'#9ec7d3'}).setOrigin(.5,0);
   }
