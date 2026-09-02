@@ -1,17 +1,18 @@
 import type{GameController}from'../game/controller';
 import{addBallExperience,nextExperienceCost}from'../game/ball-progression';
 import{createPlayerFighter,type Fighter}from'../game/battle';
-import type{BallClass,BallForm,PegType,RunState,ShopSlot}from'../game/model';
-import{createLaunchResult}from'../game/peg-grid';
-import{populationProgress}from'../game/shop';
+import type{BallClass,BallForm,PegQuality,PegType,RunState,ShopSlot}from'../game/model';
+import{createLaunchResult,ECHO_EFFECT,GUARD_EFFECT,HASTE_EFFECT,POWER_EFFECT,SPRING_EFFECT}from'../game/peg-grid';
+import{populationProgress,QUALITY_XP}from'../game/shop';
 
 const CLASS_NAME:Record<BallClass,string>={warrior:'战士球',mage:'术士球',archer:'弓手球'};
 const CLASS_ICON:Record<BallClass,string>={warrior:'⚔',mage:'✦',archer:'➶'};
 const CLASS_COLOR_CSS:Record<BallClass,string>={warrior:'#d45846',mage:'#726de8',archer:'#55a863'};
 const CLASS_DESC:Record<BallClass,string>={warrior:'近战前排 · 生命 120 · 攻击 12 · 射程 1',mage:'远程爆发 · 生命 70 · 攻击 16 · 射程 3',archer:'高速远程 · 生命 80 · 攻击 11 · 射程 3'};
-const PEG_NAME:Record<Exclude<PegType,'normal'>,string>={power:'力量钉',haste:'疾速钉',guard:'守护钉',echo:'回响钉',spring:'弹簧钉',amplifier:'增幅钉'};
-const PEG_ICON:Record<Exclude<PegType,'normal'>,string>={power:'攻',haste:'速',guard:'盾',echo:'双',spring:'弹',amplifier:'倍'};
-const PEG_DESC:Record<Exclude<PegType,'normal'>,string>={power:'本轮攻击 +10%；回响时效果翻倍',haste:'本轮攻速 +8%；回响时效果翻倍',guard:'获得最大生命 12% 护盾；回响时效果翻倍',echo:'使下一次特殊钉的效果触发两次',spring:'碰撞后强力反弹，改变单位球路线',amplifier:'先结算本次 EXP，随后经验倍率 ×1.5；回响时连续增幅两次'};
+const PEG_NAME:Record<Exclude<PegType,'normal'>,string>={experience:'经验钉',power:'力量钉',haste:'疾速钉',guard:'守护钉',echo:'回响钉',spring:'弹簧钉',multiplier:'倍率钉',teleport:'传送钉'};
+const PEG_ICON:Record<Exclude<PegType,'normal'>,string>={experience:'验',power:'攻',haste:'速',guard:'盾',echo:'响',spring:'弹',multiplier:'倍',teleport:'传'};
+const QUALITY_NAME:Record<PegQuality,string>={common:'普通',rare:'稀有',epic:'史诗',legendary:'传说'};
+const QUALITY_CSS:Record<PegQuality,string>={common:'#e8e5dc',rare:'#5ba7ff',epic:'#c873ff',legendary:'#ffa63d'};
 const PHASE_NAME:Record<RunState['phase'],string>={SHOP:'整备',LAUNCHING:'发射',TRANSFERRING:'转移',BATTLE:'战斗',RUN_END:'结算'};
 const FORM_NAME:Record<BallForm,string>={warrior:'战士',knight:'骑士',general:'将军',commander:'统帅',lord:'领主',mage:'术士',wizard:'法师',elementalist:'元素师',magus:'魔导师',archmage:'大魔法师',archer:'弓手',crossbowman:'弩手',ranger:'游侠',sharpshooter:'神射手',hawkeye:'鹰眼射手'};
 type GrowthStats=Pick<Fighter,'attack'|'maxHp'|'attackEveryMs'|'range'|'shield'>;
@@ -38,13 +39,24 @@ export class Hud{
   private action(fn:()=>void){try{fn()}catch(error){this.toast(error instanceof Error?error.message:'操作失败')}}
   private toast(text:string){const view=document.createElement('div');view.className='toast';view.textContent=text;document.body.append(view);setTimeout(()=>view.remove(),1600)}
 
+  private pegDescription(type:Exclude<PegType,'normal'>,quality:PegQuality){
+    if(type==='experience')return'无额外效果，只提供碰撞经验';
+    if(type==='power')return`本轮攻击 +${Math.round(POWER_EFFECT[quality]*100)}%`;
+    if(type==='haste')return`本轮攻速 +${Math.round(HASTE_EFFECT[quality]*100)}%`;
+    if(type==='guard')return`获得最大生命 ${Math.round(GUARD_EFFECT[quality]*100)}% 护盾`;
+    if(type==='spring')return`碰撞冲力 ×${SPRING_EFFECT[quality]}`;
+    if(type==='echo')return`下一次特殊效果总计触发 ${ECHO_EFFECT[quality]} 次`;
+    if(type==='multiplier')return`经验倍率 ×${quality==='legendary'?2:1.5}，冷却 ${quality==='legendary'?'0.8':'1'} 秒`;
+    return quality==='legendary'?'传送到上方，并附加强力随机冲力':'传送到训练场上方安全区域';
+  }
+
   private card(slot:ShopSlot,index:number,state:RunState){
     const item=slot.item,isBall=item.kind==='ball',full=isBall&&state.balls.length>=state.population.level;
-    const icon=isBall?CLASS_ICON[item.ballClass]:PEG_ICON[item.pegType],name=isBall?CLASS_NAME[item.ballClass]:PEG_NAME[item.pegType];
+    const icon=isBall?CLASS_ICON[item.ballClass]:PEG_ICON[item.pegType],name=isBall?CLASS_NAME[item.ballClass]:`${QUALITY_NAME[item.quality]} · ${PEG_NAME[item.pegType]}`;
     const hint=isBall?(full?'人口已满':'点击购买'):'拖到左侧钉位';
-    const description=isBall?CLASS_DESC[item.ballClass]:`${PEG_DESC[item.pegType]} · 基础碰撞 +${state.population.level+1} EXP`;
+    const description=isBall?CLASS_DESC[item.ballClass]:`碰撞 +${QUALITY_XP[item.quality]} EXP · ${this.pegDescription(item.pegType,item.quality)}`;
     const disabled=slot.sold||state.phase!=='SHOP'||state.gold<item.price||full;
-    return`<article class="shop-card ${isBall?'ball-card':'peg-card'} ${slot.sold?'sold':''}" data-slot="${index}" tabindex="0" ${!isBall&&!disabled?'draggable="true"':''}>
+    return`<article class="shop-card ${isBall?'ball-card':'peg-card'} ${slot.sold?'sold':''}" data-slot="${index}" tabindex="0" style="${isBall?'':`--quality:${QUALITY_CSS[item.quality]}`}" ${!isBall&&!disabled?'draggable="true"':''}>
       <button class="lock ${slot.locked?'active':''}" data-lock="${index}" title="锁定此格">${slot.locked?'🔒':'◇'}</button>
       <div class="item-icon">${icon}</div><div class="item-copy"><b>${name}</b><small>${slot.sold?'已售出':hint}</small></div>
       <div class="price">● ${item.price}</div>

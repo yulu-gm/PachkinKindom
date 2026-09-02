@@ -1,6 +1,8 @@
 import{describe,expect,it}from'vitest';
 import{applyPegHit,createLaunchResult,GRID_SLOTS}from'./peg-grid';
 
+const peg=(type:Parameters<typeof applyPegHit>[1]['type'],quality:Parameters<typeof applyPegHit>[1]['quality'])=>({type,quality});
+
 describe('peg grid',()=>{
   it('creates an evenly spaced 8 by 5 grid with a clear upper field',()=>{
     expect(GRID_SLOTS).toHaveLength(40);
@@ -14,28 +16,38 @@ describe('peg grid',()=>{
 
   it('always grants experience and consumes echo on the next special peg',()=>{
     let result=createLaunchResult('b1');
-    result=applyPegHit(result,'echo');
-    result=applyPegHit(result,'normal');
-    result=applyPegHit(result,'power');
-    expect(result).toMatchObject({xp:6,attackBonus:.2,echoPending:false});
+    result=applyPegHit(result,peg('echo','rare')).result;
+    result=applyPegHit(result,peg('normal','common')).result;
+    result=applyPegHit(result,peg('power','common')).result;
+    expect(result).toMatchObject({xp:9,attackBonus:.2,echoRepeats:0});
   });
 
   it('keeps echo armed through normal pegs until another special peg',()=>{
-    let result=applyPegHit(createLaunchResult('b1'),'echo');
-    result=applyPegHit(result,'normal');
-    expect(result.echoPending).toBe(true);
+    let result=applyPegHit(createLaunchResult('b1'),peg('echo','epic')).result;
+    result=applyPegHit(result,peg('experience','legendary')).result;
+    expect(result.echoRepeats).toBe(3);
   });
 
-  it('stacks amplifier multipliers without a design cap and doubles amplification after echo',()=>{
-    let result=applyPegHit(createLaunchResult('b1'),'amplifier',4);
-    expect(result).toMatchObject({xp:4,xpMultiplier:1.5});
-    result=applyPegHit(result,'amplifier',4);
-    expect(result).toMatchObject({xp:10,xpMultiplier:2.25});
-    result=applyPegHit(result,'echo',4);
-    result=applyPegHit(result,'amplifier',4);
-    expect(result.xp).toBe(28);
-    expect(result.xpMultiplier).toBeCloseTo(5.0625);
-    for(let hit=0;hit<20;hit++)result=applyPegHit(result,'amplifier',4);
-    expect(result.xpMultiplier).toBeGreaterThan(10000);
+  it('stacks multiplier pegs after awarding quality experience and preserves echo during cooldown',()=>{
+    let outcome=applyPegHit(createLaunchResult('b1'),peg('multiplier','epic'));
+    expect(outcome).toMatchObject({xpGained:10,cooldownMs:1000,result:{xp:10,xpMultiplier:1.5}});
+    outcome=applyPegHit(outcome.result,peg('echo','rare'));
+    outcome=applyPegHit(outcome.result,peg('multiplier','epic'),false);
+    expect(outcome).toMatchObject({xpGained:15,effectTriggered:false,result:{xpMultiplier:1.5,echoRepeats:2}});
+    outcome=applyPegHit(outcome.result,peg('multiplier','epic'),true);
+    expect(outcome.result.xpMultiplier).toBeCloseTo(3.375);
+    for(let hit=0;hit<20;hit++)outcome=applyPegHit(outcome.result,peg('multiplier','legendary'));
+    expect(outcome.result.xpMultiplier).toBeGreaterThan(10000);
+  });
+
+  it('uses quality experience and scalable effect values without population input',()=>{
+    let outcome=applyPegHit(createLaunchResult('b1'),peg('power','legendary'));
+    expect(outcome).toMatchObject({xpGained:20,result:{attackBonus:.32}});
+    outcome=applyPegHit(outcome.result,peg('haste','epic'));
+    expect(outcome.result.hasteBonus).toBe(.18);
+    outcome=applyPegHit(outcome.result,peg('guard','rare'));
+    expect(outcome.result.shieldRatio).toBe(.18);
+    outcome=applyPegHit(outcome.result,peg('spring','legendary'));
+    expect(outcome.springPower).toBe(2.1);
   });
 });

@@ -4,12 +4,13 @@ import{ENCOUNTERS}from'./encounters';
 import type{BallForm,Cell,LaunchResult,RunState,SpecialPegType,Star}from'./model';
 import{applyPegHit,createLaunchResult}from'./peg-grid';
 import{createRun}from'./run-state';
-import{buyBallFromShop,buyPopulationXp,createShop,rerollShop}from'./shop';
+import{BALL_SELL_PRICE,buyBallFromShop,buyPopulationXp,createShop,rerollShop}from'./shop';
 
 type Listener=(state:RunState)=>void;
 const FORM_TIER:Record<BallForm,number>={warrior:0,knight:1,general:2,commander:3,lord:4,mage:0,wizard:1,elementalist:2,magus:3,archmage:4,archer:0,crossbowman:1,ranger:2,sharpshooter:3,hawkeye:4};
-export const enemyBounty=(enemy:{form:BallForm;star:Star})=>Math.min(8,5+FORM_TIER[enemy.form]+enemy.star-1);
-export const stageReward=(stage:number)=>ENCOUNTERS[Math.min(stage-1,ENCOUNTERS.length-1)]!.enemies.reduce((sum,enemy)=>sum+enemyBounty(enemy),0);
+const STAR_BONUS:Record<Star,number>={1:0,2:3,3:5};
+export const enemyBounty=(enemy:{form:BallForm;star:Star})=>5+FORM_TIER[enemy.form]+STAR_BONUS[enemy.star];
+export const stageReward=(stage:number)=>5+ENCOUNTERS[Math.min(stage-1,ENCOUNTERS.length-1)]!.enemies.reduce((sum,enemy)=>sum+enemyBounty(enemy),0);
 
 export class GameController{
   private state:RunState;
@@ -37,15 +38,14 @@ export class GameController{
     return[...queue];
   }
 
-  recordPegHit(ballId:string,slotId:number){
+  recordPegHit(ballId:string,slotId:number,effectReady=true){
     if(this.state.phase!=='LAUNCHING'||!this.state.launchQueue.includes(ballId)||this.state.transferredBallIds.includes(ballId))throw new Error('这颗球当前不可计分');
     const peg=this.state.pegGrid[slotId];
     if(!peg)throw new Error('钉位不存在');
     const current=this.state.launchResults[ballId]??createLaunchResult(ballId);
-    const springPower=peg.type==='spring'?(current.echoPending?2:1):0;
-    const result=applyPegHit(current,peg.type,this.state.population.level+1);
+    const outcome=applyPegHit(current,peg,effectReady),result=outcome.result;
     this.state={...this.state,launchResults:{...this.state.launchResults,[ballId]:result}};
-    return{result,springPower,xpGained:result.xp-current.xp};
+    return outcome;
   }
 
   finishBallLaunch(ballId:string){
@@ -76,6 +76,13 @@ export class GameController{
 
   buyItem(slotIndex:number){this.state=buyBallFromShop(this.state,slotIndex);this.emit()}
 
+  sellBall(ballId:string){
+    if(this.state.phase!=='SHOP')throw new Error('只能在备战阶段售出单位');
+    if(!this.state.balls.some(ball=>ball.id===ballId))throw new Error('单位不存在');
+    this.state={...this.state,gold:this.state.gold+BALL_SELL_PRICE,balls:this.state.balls.filter(ball=>ball.id!==ballId)};
+    this.emit();
+  }
+
   toggleShopLock(slotIndex:number){
     if(this.state.phase!=='SHOP')throw new Error('当前无法锁定商店');
     if(!this.state.shop.slots[slotIndex])throw new Error('商品不存在');
@@ -86,7 +93,7 @@ export class GameController{
   reroll(){
     if(this.state.phase!=='SHOP')throw new Error('当前无法刷新');
     if(this.state.gold<this.state.shop.rerollCost)throw new Error('金币不足');
-    this.state={...this.state,gold:this.state.gold-this.state.shop.rerollCost,shop:rerollShop(this.state.shop,this.nextSeed())};
+    this.state={...this.state,gold:this.state.gold-this.state.shop.rerollCost,shop:rerollShop(this.state.shop,this.nextSeed(),this.state.population.level)};
     this.emit();
   }
 
@@ -105,7 +112,7 @@ export class GameController{
     if(!this.state.pegGrid[gridSlotId])throw new Error('钉位不存在');
     this.state={
       ...this.state,gold:this.state.gold-shopSlot.item.price,
-      pegGrid:this.state.pegGrid.map(slot=>slot.id===gridSlotId?{...slot,type:shopSlot.item.kind==='peg'?shopSlot.item.pegType as SpecialPegType:slot.type}:slot),
+      pegGrid:this.state.pegGrid.map(slot=>slot.id===gridSlotId&&shopSlot.item.kind==='peg'?{...slot,type:shopSlot.item.pegType as SpecialPegType,quality:shopSlot.item.quality}:slot),
       shop:{...this.state.shop,slots:this.state.shop.slots.map((slot,index)=>index===shopSlotIndex?{...slot,sold:true}:slot)},
     };
     this.emit();
@@ -130,7 +137,7 @@ export class GameController{
         if(this.state.stage>=ENCOUNTERS.length)this.state={...this.state,gold,phase:'RUN_END',result:'victory'};
         else{
           const stage=this.state.stage+1;
-          this.state={...this.state,gold,stage,phase:'SHOP',shop:createShop(this.nextSeed()),launchResults:{},launchQueue:[],transferredBallIds:[]};
+          this.state={...this.state,gold,stage,phase:'SHOP',shop:createShop(this.nextSeed(),this.state.population.level),launchResults:{},launchQueue:[],transferredBallIds:[]};
         }
       }else this.state={...this.state,phase:'RUN_END',result:'defeat'};
       this.emit();

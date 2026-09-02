@@ -63,7 +63,7 @@ export function createBattle(players:BallUnit[],launches:Record<string,LaunchRes
   return{
     elapsedMs:0,events:[],
     fighters:[
-      ...players.map(ball=>createPlayerFighter(ball,launches[ball.id]??{ballId:ball.id,xp:0,xpMultiplier:1,attackBonus:0,hasteBonus:0,shieldRatio:0,echoPending:false})),
+      ...players.map(ball=>createPlayerFighter(ball,launches[ball.id]??{ballId:ball.id,xp:0,xpMultiplier:1,attackBonus:0,hasteBonus:0,shieldRatio:0,echoRepeats:0})),
       ...enemies.map(enemy=>createEnemyFighter(enemy,enemyScale)),
     ],
   };

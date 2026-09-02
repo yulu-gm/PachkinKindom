@@ -1,6 +1,6 @@
 import{describe,expect,it}from'vitest';
 import{GRID_SLOTS}from'../../game/peg-grid';
-import{isRelaunchReady,TRACK}from'./geometry';
+import{isRelaunchReady,TELEPORT_ZONE,teleportPoint,TRACK}from'./geometry';
 
 describe('pachinko launch track geometry',()=>{
   it('spawns the ball inside a sealed launch lane',()=>{
@@ -27,5 +27,16 @@ describe('pachinko launch track geometry',()=>{
     expect(isRelaunchReady(TRACK.spawn.x,TRACK.spawn.y,-20,900)).toBe(false);
     expect(isRelaunchReady(TRACK.spawn.x,TRACK.spawn.y,1,200)).toBe(false);
     expect(isRelaunchReady(TRACK.innerRailX-20,TRACK.spawn.y,1,900)).toBe(false);
+  });
+  it('returns teleport points inside the clear upper playfield',()=>{
+    for(let seed=0;seed<100;seed++){
+      const point=teleportPoint(seed);
+      expect(point.x).toBeGreaterThanOrEqual(TELEPORT_ZONE.minX);
+      expect(point.x).toBeLessThanOrEqual(TELEPORT_ZONE.maxX);
+      expect(point.y).toBeGreaterThanOrEqual(TELEPORT_ZONE.minY);
+      expect(point.y).toBeLessThanOrEqual(TELEPORT_ZONE.maxY);
+      expect(point.x).toBeLessThan(TRACK.innerRailX-TRACK.spawn.radius);
+      expect(point.y).toBeLessThan(Math.min(...GRID_SLOTS.map(slot=>slot.y))-30);
+    }
   });
 });

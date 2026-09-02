@@ -1,6 +1,7 @@
 import{describe,expect,it}from'vitest';
+import{createBall}from'./ball-progression';
 import{enemyBounty,GameController,stageReward}from'./controller';
-import{BALL_PRICE}from'./shop';
+import{BALL_PRICE,BALL_SELL_PRICE}from'./shop';
 import{createRun}from'./run-state';
 
 describe('controller',()=>{
@@ -22,14 +23,13 @@ describe('controller',()=>{
   });
 
   it('keeps every launched ball in flight at once and transfers them out of order',()=>{
-    const controller=new GameController(2,{...createRun(2),gold:BALL_PRICE*2,population:{level:3,xp:10}});
-    controller.buyItem(0);controller.buyItem(1);
+    const run=createRun(2),controller=new GameController(2,{...run,gold:BALL_PRICE*2,population:{level:3,xp:10},nextId:4,balls:[...run.balls,createBall('b2','mage',{row:0,col:1}),createBall('b3','archer',{row:0,col:2})]});
     const ids=controller.beginLaunch();
     expect(ids).toHaveLength(3);
     const [first,middle,last]=ids;
     // the last-launched ball may finish and transfer while earlier ones still fly
     for(let hit=0;hit<3;hit++)controller.recordPegHit(last!,0);
-    expect(controller.snapshot().launchResults[last!]!.xp).toBe(12);
+    expect(controller.snapshot().launchResults[last!]!.xp).toBe(6);
     controller.finishBallLaunch(last!);
     expect(()=>controller.finishBallLaunch(last!)).toThrow();
     expect(controller.snapshot().phase).toBe('LAUNCHING');
@@ -54,25 +54,36 @@ describe('controller',()=>{
     const price=controller.snapshot().shop.slots[index]!.item.price;
     controller.placePeg(index,7);
     expect(controller.snapshot().pegGrid[7]!.type).not.toBe('normal');
+    expect(controller.snapshot().pegGrid[7]!.quality).toBe((controller.snapshot().shop.slots[index]!.item as{quality:string}).quality);
     expect(controller.snapshot().gold).toBe(10-price);
     expect(controller.snapshot().shop.slots[index]!.sold).toBe(true);
   });
 
-  it('starts at zero gold and grants five to eight gold per defeated enemy after victory',()=>{
+  it('sells a board unit for three gold only during preparation',()=>{
+    const controller=new GameController(3),id=controller.snapshot().balls[0]!.id;
+    controller.sellBall(id);
+    expect(controller.snapshot()).toMatchObject({gold:BALL_SELL_PRICE,balls:[]});
+    expect(()=>controller.sellBall(id)).toThrow('单位不存在');
+    const launching=new GameController(4);launching.beginLaunch();
+    expect(()=>launching.sellBall(launching.snapshot().balls[0]!.id)).toThrow('只能在备战阶段售出单位');
+  });
+
+  it('adds form tier and star bonus to enemy bounty plus five gold for victory',()=>{
     const controller=new GameController(2);
     expect(controller.snapshot().gold).toBe(0);
     expect(enemyBounty({form:'warrior',star:1})).toBe(5);
-    expect(enemyBounty({form:'knight',star:2})).toBe(7);
-    expect(enemyBounty({form:'general',star:3})).toBe(8);
+    expect(enemyBounty({form:'knight',star:1})).toBe(6);
+    expect(enemyBounty({form:'knight',star:2})).toBe(9);
+    expect(enemyBounty({form:'general',star:3})).toBe(12);
     expect(enemyBounty({form:'commander',star:1})).toBe(8);
-    expect(enemyBounty({form:'lord',star:1})).toBe(8);
+    expect(enemyBounty({form:'lord',star:3})).toBe(14);
     controller.beginLaunch();
     const id=controller.snapshot().launchQueue[0]!;
     controller.finishBallLaunch(id);
     controller.completeBallTransfer(id);
     for(let tick=0;tick<3000&&controller.snapshot().phase==='BATTLE';tick++)controller.tickBattle(50);
     expect(controller.snapshot()).toMatchObject({phase:'SHOP',stage:2,gold:stageReward(1)});
-    expect(stageReward(1)).toBe(5);
+    expect(stageReward(1)).toBe(10);
     expect(controller.snapshot().shop.rerollCost).toBe(2);
   });
 

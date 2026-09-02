@@ -1,15 +1,16 @@
 import Phaser from'phaser';
 import{addBallExperience,nextExperienceCost,progressionNode}from'../../game/ball-progression';
 import type{BattleEvent,BattleState}from'../../game/battle';
-import type{BallClass,BallForm,BallUnit,PegType,RunState}from'../../game/model';
+import type{BallClass,BallForm,BallUnit,PegQuality,PegSlot,PegType,RunState}from'../../game/model';
 import type{GameController}from'../../game/controller';
-import{isRelaunchReady,TRACK}from'../pachinko/geometry';
+import{isRelaunchReady,teleportPoint,TRACK}from'../pachinko/geometry';
 
-type ActiveBall={id:string;img:Phaser.Physics.Matter.Image;lastLaunch:number;retryReady:boolean;retryRing?:Phaser.GameObjects.Arc;forced:boolean;stalledSince?:number;rescueCount:number;previewNode:number};
+type ActiveBall={id:string;img:Phaser.Physics.Matter.Image;lastLaunch:number;retryReady:boolean;retryRing?:Phaser.GameObjects.Arc;forced:boolean;stalledSince?:number;rescueCount:number;previewNode:number;teleportFrame?:number};
 type UnitView={root:Phaser.GameObjects.Container;sprite:Phaser.GameObjects.Sprite;bar:Phaser.GameObjects.Rectangle;shield:Phaser.GameObjects.Arc;role:'soldier'|'slime'};
 const CLASS_COLOR:Record<BallClass,number>={warrior:0xd45846,mage:0x726de8,archer:0x55a863};
-const PEG_COLOR:Record<PegType,number>={normal:0xdab15f,power:0xff5b57,haste:0x5bc8ff,guard:0x77d7b0,echo:0xc57bff,spring:0xffe35b,amplifier:0xa9df55};
-const PEG_SYMBOL:Record<PegType,string>={normal:'',power:'攻',haste:'速',guard:'盾',echo:'双',spring:'弹',amplifier:'倍'};
+const PEG_COLOR:Record<PegType,number>={normal:0xdab15f,experience:0xe5e0c8,power:0xff5b57,haste:0x5bc8ff,guard:0x77d7b0,echo:0xc57bff,spring:0xffe35b,multiplier:0xa9df55,teleport:0x56e0dc};
+const PEG_SYMBOL:Record<PegType,string>={normal:'',experience:'验',power:'攻',haste:'速',guard:'盾',echo:'响',spring:'弹',multiplier:'倍',teleport:'传'};
+const QUALITY_COLOR:Record<PegQuality,number>={common:0xe8e5dc,rare:0x5ba7ff,epic:0xc873ff,legendary:0xffa63d};
 const FORM_NAME:Record<BallForm,string>={warrior:'战士',knight:'骑士',general:'将军',commander:'统帅',lord:'领主',mage:'术士',wizard:'法师',elementalist:'元素师',magus:'魔导师',archmage:'大魔法师',archer:'弓手',crossbowman:'弩手',ranger:'游侠',sharpshooter:'神射手',hawkeye:'鹰眼射手'};
 const FORM_CLASS:Record<BallForm,BallClass>={warrior:'warrior',knight:'warrior',general:'warrior',commander:'warrior',lord:'warrior',mage:'mage',wizard:'mage',elementalist:'mage',magus:'mage',archmage:'mage',archer:'archer',crossbowman:'archer',ranger:'archer',sharpshooter:'archer',hawkeye:'archer'};
 const LAUNCH_SPEED={minX:-.45,maxX:.45,minY:-22.4,maxY:-20.8}as const;
@@ -29,6 +30,8 @@ export class GameScene extends Phaser.Scene{
   private dragPegSlot?:number;
   private dragMarker?:Phaser.GameObjects.Arc;
   private canvas?:HTMLCanvasElement;
+  private pegCooldowns=new Map<number,number>();
+  private frameIndex=0;
 
   constructor(){super('game')}
   create():void{
@@ -74,7 +77,7 @@ export class GameScene extends Phaser.Scene{
     this.add.rectangle(622,350,38,420,0xd9b46a,.12).setStrokeStyle(2,0x6f4925);
     this.add.text(622,330,'发\n射\n轨\n道',{fontFamily:'monospace',fontSize:'12px',color:'#e8c87d',align:'center'}).setOrigin(.5);
     for(const slot of this.c.snapshot().pegGrid){
-      const ring=this.add.circle(slot.x,slot.y,10,PEG_COLOR[slot.type]).setStrokeStyle(3,0x71471f).setDepth(2);
+      const ring=this.add.circle(slot.x,slot.y,10,PEG_COLOR[slot.type]).setStrokeStyle(3,QUALITY_COLOR[slot.quality]).setDepth(2);
       const text=this.add.text(slot.x,slot.y,PEG_SYMBOL[slot.type],{fontFamily:'monospace',fontSize:'10px',fontStyle:'bold',color:'#ffffff',stroke:'#18222b',strokeThickness:2}).setOrigin(.5).setDepth(3);
       this.matter.add.circle(slot.x,slot.y,9,{isStatic:true,label:`peg:${slot.id}`,restitution:.9});
       this.pegViews.set(slot.id,{ring,text});
@@ -86,12 +89,13 @@ export class GameScene extends Phaser.Scene{
 
   private drawBoard(){
     for(let row=0;row<4;row++)for(let col=0;col<6;col++){const point=boardPoint(row,col);this.add.rectangle(point.x,point.y,84,82,(row+col)%2?0x625b43:0x817653).setStrokeStyle(2,col<3?0x6fa3b0:0xad6a6a)}
-    this.add.text(837,454,'己方编队区 | 商店阶段可拖动单位球',{fontFamily:'monospace',fontSize:'13px',color:'#b9d9d1'}).setOrigin(.5);
+    this.add.text(837,454,'己方编队区 | 左键拖动 · 右键售出 3 金币',{fontFamily:'monospace',fontSize:'13px',color:'#b9d9d1'}).setOrigin(.5);
     this.add.text(1108,454,'敌方区域',{fontFamily:'monospace',fontSize:'13px',color:'#d8a9a0'}).setOrigin(.5);
   }
 
   private startExpedition(){
     try{
+      this.pegCooldowns.clear();
       this.c.beginLaunch();
       const queue=this.c.snapshot().launchQueue;
       queue.forEach((id,index)=>this.time.delayedCall(index*200,()=>this.spawnBall(id)));
@@ -140,15 +144,28 @@ export class GameScene extends Phaser.Scene{
   private hitPeg(id:string,slotId:number){
     const active=this.activeBalls.get(id);if(!active)return;
     try{
+      const slot=this.c.snapshot().pegGrid[slotId]!;
+      if(slot.type==='teleport'&&active.teleportFrame===this.frameIndex)return;
       const beforeNode=active.previewNode;
-      const {result,springPower,xpGained}=this.c.recordPegHit(id,slotId),slot=this.c.snapshot().pegGrid[slotId]!;
+      const effectReady=slot.type!=='multiplier'||(this.pegCooldowns.get(slotId)??0)<=this.time.now;
+      const {result,springPower,xpGained,cooldownMs,teleport,teleportPower}=this.c.recordPegHit(id,slotId,effectReady);
+      if(cooldownMs)this.pegCooldowns.set(slotId,this.time.now+cooldownMs);
       const preview=this.previewBall(id),node=progressionNode(preview);active.previewNode=node;window.dispatchEvent(new CustomEvent('pk-growth-hit',{detail:id}));
       this.burst(slot.x,slot.y,PEG_COLOR[slot.type]);this.floatText(slot.x,slot.y-8,`+${this.compactNumber(xpGained)} EXP${slot.type==='normal'?'':` · ${PEG_SYMBOL[slot.type]}`}`,PEG_COLOR[slot.type]);
-      if(slot.type==='amplifier')this.floatText(slot.x,slot.y+12,`EXP ×${this.compactMultiplier(result.xpMultiplier)}`,PEG_COLOR.amplifier);
+      if(slot.type==='multiplier'&&effectReady)this.floatText(slot.x,slot.y+12,`EXP ×${this.compactMultiplier(result.xpMultiplier)}`,PEG_COLOR.multiplier);
+      else if(slot.type==='multiplier')this.floatText(slot.x,slot.y+12,'冷却中 · 仅 EXP',0x9aa1a4);
       if(node>beforeNode)this.boostGrowth(active,beforeNode,node,preview);
       if(springPower)active.img.setVelocity(Phaser.Math.FloatBetween(-3.5,3.5)*springPower,-14-(springPower-1)*6);
+      if(teleport){active.teleportFrame=this.frameIndex;this.teleportBall(active,slot,teleportPower)}
       if(result.xp%50===0&&!this.reduced)this.cameras.main.shake(60,.002);
     }catch{}
+  }
+  private teleportBall(active:ActiveBall,slot:PegSlot,power:number){
+    const origin={x:active.img.x,y:active.img.y},point=teleportPoint(Math.floor(this.time.now)+slot.id*101+active.rescueCount*17),legendary=slot.quality==='legendary';
+    this.clearRetry(active);active.img.setPosition(point.x,point.y).setAngularVelocity(Phaser.Math.FloatBetween(-.16,.16));
+    active.img.setVelocity(legendary?Phaser.Math.FloatBetween(-3.5,3.5)*Math.min(2,power):Phaser.Math.FloatBetween(-1.2,1.2),legendary?Phaser.Math.FloatBetween(5,8)+power:Phaser.Math.FloatBetween(2.5,4));
+    active.lastLaunch=this.time.now;active.forced=false;active.stalledSince=undefined;
+    this.burst(origin.x,origin.y,PEG_COLOR.teleport);this.burst(point.x,point.y,QUALITY_COLOR[slot.quality]);this.floatText(point.x,point.y-18,'传送！',PEG_COLOR.teleport);
   }
   private previewBall(id:string,state=this.c.snapshot()){
     const ball=state.balls.find(value=>value.id===id)!,result=state.launchResults[id];
@@ -179,10 +196,16 @@ export class GameScene extends Phaser.Scene{
   }
 
   private render(state:RunState){
-    for(const slot of state.pegGrid){const view=this.pegViews.get(slot.id);if(view){view.ring.setFillStyle(PEG_COLOR[slot.type]);view.text.setText(PEG_SYMBOL[slot.type])}}
+    for(const slot of state.pegGrid)this.updatePegView(slot);
     if(state.phase==='SHOP')this.renderPrep(state);
     else if(this.prepViews.length)this.clearPrep();
     if(state.phase==='BATTLE')this.renderBattle();
+  }
+  private updatePegView(slot:PegSlot){
+    const view=this.pegViews.get(slot.id);if(!view)return;
+    const cooling=slot.type==='multiplier'&&(this.pegCooldowns.get(slot.id)??0)>this.time.now;
+    view.ring.setFillStyle(cooling?0x62686b:PEG_COLOR[slot.type],cooling?0.72:1).setStrokeStyle(3,QUALITY_COLOR[slot.quality],cooling?0.45:1);
+    view.text.setText(cooling?'CD':PEG_SYMBOL[slot.type]).setAlpha(cooling?0.55:1).setFontSize(cooling?'7px':'10px');
   }
   private clearPrep(){for(const view of this.prepViews)view.destroy();this.prepViews=[]}
   private renderPrep(state:RunState){
@@ -192,8 +215,13 @@ export class GameScene extends Phaser.Scene{
       const point=boardPoint(ball.cell.row,ball.cell.col),view=this.makeUnit(point.x,point.y,ball.form,ball.star,false,ball);
       view.root.setData('ballId',ball.id).setInteractive(new Phaser.Geom.Rectangle(-40,-48,80,96),Phaser.Geom.Rectangle.Contains);
       if(view.root.input)view.root.input.cursor='pointer';
+      view.root.on('pointerdown',(pointer:Phaser.Input.Pointer)=>{if(pointer.rightButtonDown())this.sellBoardBall(ball,point.x,point.y)});
       this.input.setDraggable(view.root);this.prepViews.push(view.root);
     }
+  }
+  private sellBoardBall(ball:BallUnit,x:number,y:number){
+    try{this.c.sellBall(ball.id);this.spawnBurst(x,y,ball.class);this.floatText(x,y-35,'售出 +3 金币',0xffd261);this.toast(`${FORM_NAME[ball.form]}已售出`)}
+    catch(error){this.toast(error instanceof Error?error.message:'无法售出单位')}
   }
 
   private makeUnit(x:number,y:number,form:BallForm,star:number,enemy=false,ball?:BallUnit):UnitView{
@@ -309,6 +337,12 @@ export class GameScene extends Phaser.Scene{
     this.tweens.add({targets:view,alpha:0,y:590,duration:1400,onComplete:()=>view.destroy()});
   }
   update(_:number,delta:number){
+    this.frameIndex++;
+    for(const slot of this.c.snapshot().pegGrid){
+      const deadline=this.pegCooldowns.get(slot.id);
+      if(deadline!==undefined&&deadline<=this.time.now)this.pegCooldowns.delete(slot.id);
+      if(slot.type==='multiplier')this.updatePegView(slot);
+    }
     for(const active of this.activeBalls.values()){
       const body=active.img.body as MatterJS.BodyType|undefined,elapsed=this.time.now-active.lastLaunch;
       if(!body){this.activeBalls.delete(active.id);continue}
