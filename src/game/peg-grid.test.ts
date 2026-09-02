@@ -50,4 +50,9 @@ describe('peg grid',()=>{
     outcome=applyPegHit(outcome.result,peg('spring','legendary'));
     expect(outcome.springPower).toBe(2.1);
   });
+
+  it('adds bomb bonus before multiplying and rounds upward',()=>{
+    const outcome=applyPegHit(createLaunchResult('b1'),{type:'normal',quality:'common',bonusXp:3,bonusMultiplier:1.2});
+    expect(outcome.xpGained).toBe(6);
+  });
 });

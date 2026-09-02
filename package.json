@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "tsc --noEmit && vite build",
+    "build:onefile": "npm run build && node scripts/make-onefile.mjs",
     "test": "vitest run",
     "test:watch": "vitest"
   },

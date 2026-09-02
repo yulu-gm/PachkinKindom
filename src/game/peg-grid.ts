@@ -9,6 +9,8 @@ export const GRID_SLOTS:PegSlot[]=Array.from({length:GRID_COLUMNS*GRID_ROWS},(_,
   y:250+Math.floor(id/GRID_COLUMNS)*55,
   type:'normal',
   quality:'common',
+  bonusXp:0,
+  bonusMultiplier:1,
 }));
 
 export const createLaunchResult=(ballId:string):LaunchResult=>({
@@ -22,9 +24,9 @@ export const SPRING_EFFECT:Record<PegQuality,number>={common:1,rare:1.25,epic:1.
 export const ECHO_EFFECT:Record<PegQuality,number>={common:2,rare:2,epic:3,legendary:4};
 export type PegHitOutcome={result:LaunchResult;xpGained:number;effectTriggered:boolean;springPower:number;teleport:boolean;teleportPower:number;cooldownMs:number};
 
-export function applyPegHit(result:LaunchResult,peg:Pick<PegSlot,'type'|'quality'>,effectReady=true):PegHitOutcome{
+export function applyPegHit(result:LaunchResult,peg:Pick<PegSlot,'type'|'quality'>&Partial<Pick<PegSlot,'bonusXp'|'bonusMultiplier'>>,effectReady=true):PegHitOutcome{
   const{type,quality}=peg,triggerable=type!=='normal'&&type!=='experience'&&type!=='echo',effectTriggered=triggerable&&effectReady,times=effectTriggered?(result.echoRepeats||1):0;
-  const xpGained=Math.max(1,Math.floor(QUALITY_XP[quality]*result.xpMultiplier));
+  const xpGained=Math.max(1,Math.ceil((QUALITY_XP[quality]+(peg.bonusXp??0))*(peg.bonusMultiplier??1)*result.xpMultiplier));
   const next:LaunchResult={
     ...result,
     xp:result.xp+xpGained,

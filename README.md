@@ -11,6 +11,8 @@ npm run dev
 
 打开 http://127.0.0.1:5173/ 。生产构建使用 `npm run build`，逻辑测试使用 `npm test`。
 
+执行 `npm run build:onefile` 可生成无需外部 JavaScript、CSS 或图片资源的 `dist-onefile/PachinkoKingdom.html`，可直接双击离线游玩。
+
 ## 操作
 
 - 顶部“单发 10”或“五连 45”：发射弹珠。

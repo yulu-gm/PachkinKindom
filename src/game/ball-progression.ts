@@ -7,8 +7,8 @@ export const FORM_CHAINS:Record<BallClass,readonly BallForm[]>={
   archer:['archer','crossbowman','ranger','sharpshooter','hawkeye'],
 };
 
-export const createBall=(id:string,ballClass:BallClass,cell:Cell):BallUnit=>({
-  id,class:ballClass,form:FORM_CHAINS[ballClass][0]!,star:1,xp:0,cell,
+export const createBall=(id:string,ballClass:BallClass,cell:Cell,sourceCardId=id):BallUnit=>({
+  id,sourceCardId,class:ballClass,form:FORM_CHAINS[ballClass][0]!,star:1,xp:0,cell,
 });
 
 export const resetBallProgression=(ball:BallUnit):BallUnit=>({...ball,form:FORM_CHAINS[ball.class][0]!,star:1,xp:0});

@@ -1,5 +1,5 @@
-import{createBall}from'./ball-progression';
-import type{BallClass,BallUnit,Cell,PegQuality,PopulationState,RunState,ShopItem,ShopSlot,ShopState,SpecialPegType}from'./model';
+import{BOMB_DATA,unitCardCount}from'./cards';
+import type{BallClass,CardInstance,PegQuality,PopulationState,RunState,ShopItem,ShopSlot,ShopState,SpecialPegType}from'./model';
 
 export const POP_THRESHOLDS=[0,4,10,18,30,46,66,90]as const;
 const BALLS:readonly BallClass[]=['warrior','mage','archer'];
@@ -28,66 +28,63 @@ const random=(seed:number,salt:number)=>{let value=(seed^Math.imul(salt+1,0x9e37
 
 export const qualityForRoll=(populationLevel:number,roll:number):PegQuality=>{
   const level=Math.max(1,Math.min(8,Math.floor(populationLevel))),weights=QUALITY_WEIGHTS[level]!;
-  let cursor=0;
-  for(const quality of QUALITY_ORDER){cursor+=weights[quality]/100;if(roll<cursor)return quality}
-  return'legendary';
+  let cursor=0;for(const quality of QUALITY_ORDER){cursor+=weights[quality]/100;if(roll<cursor)return quality}return'legendary';
 };
-
 export const pegPrice=(type:SpecialPegType,quality:PegQuality)=>type==='experience'
   ?QUALITY_XP[quality]===2?2:QUALITY_XP[quality]===5?3:QUALITY_XP[quality]===10?5:8
   :PEG_BASE_PRICES[type]+QUALITY_PREMIUM[quality];
 
-const ballItem=(seed:number,salt:number):ShopItem=>({kind:'ball',ballClass:pick(BALLS,random(seed,salt)),price:BALL_PRICE});
+const unitItem=(seed:number,salt:number):ShopItem=>({kind:'unit',ballClass:pick(BALLS,random(seed,salt)),price:BALL_PRICE});
 const pegItem=(seed:number,populationLevel:number,salt:number):ShopItem=>{
   const quality=qualityForRoll(populationLevel,random(seed,salt)),pegType=pick(PEGS_BY_QUALITY[quality],random(seed,salt+1));
   return{kind:'peg',pegType,quality,price:pegPrice(pegType,quality)};
 };
+const bombItem=(seed:number,populationLevel:number,salt:number):ShopItem=>{
+  const quality=qualityForRoll(populationLevel,random(seed,salt)),kind=random(seed,salt+1)<.5?'experience-bomb':'multiplier-bomb';
+  return{kind,quality,price:BOMB_DATA[quality].price};
+};
 
 export function rollSlots(seed:number,populationLevel=1,previous?:readonly ShopSlot[]):ShopSlot[]{
   const slots:Array<ShopSlot|undefined>=Array.from({length:5},(_,index)=>previous?.[index]?.locked?previous[index]:undefined),empty=()=>slots.findIndex(value=>!value);
-  let salt=0,hasBall=slots.some(value=>value?.item.kind==='ball'),hasPeg=slots.some(value=>value?.item.kind==='peg');
-  if(!hasBall){const index=empty();if(index>=0){slots[index]=slot(ballItem(seed,salt++));hasBall=true}}
-  if(!hasPeg){const index=empty();if(index>=0){slots[index]=slot(pegItem(seed,populationLevel,salt));salt+=2;hasPeg=true}}
-  while(empty()>=0){const index=empty(),makeBall=random(seed,salt++)<.4;slots[index]=slot(makeBall?ballItem(seed,salt++):pegItem(seed,populationLevel,salt));salt+=makeBall?0:2}
+  let salt=0;
+  const ensure=(present:boolean,create:()=>ShopItem)=>{if(!present){const index=empty();if(index>=0)slots[index]=slot(create())}};
+  ensure(slots.some(value=>value?.item.kind==='unit'),()=>unitItem(seed,salt++));
+  ensure(slots.some(value=>value?.item.kind==='peg'),()=>{const item=pegItem(seed,populationLevel,salt);salt+=2;return item});
+  ensure(slots.some(value=>value?.item.kind==='experience-bomb'||value?.item.kind==='multiplier-bomb'),()=>{const item=bombItem(seed,populationLevel,salt);salt+=2;return item});
+  while(empty()>=0){
+    const index=empty(),roll=random(seed,salt++);
+    if(roll<.34)slots[index]=slot(unitItem(seed,salt++));
+    else if(roll<.68){slots[index]=slot(pegItem(seed,populationLevel,salt));salt+=2}
+    else{slots[index]=slot(bombItem(seed,populationLevel,salt));salt+=2}
+  }
   return slots as ShopSlot[];
 }
-
 export function createShop(seed:number,populationLevel=1):ShopState{return{slots:rollSlots(seed,populationLevel),rerollCost:2,seed}}
-
-export function rerollShop(shop:ShopState,seed:number,populationLevel=1):ShopState{
-  return{seed,rerollCost:shop.rerollCost+1,slots:rollSlots(seed,populationLevel,shop.slots)};
-}
+export function rerollShop(shop:ShopState,seed:number,populationLevel=1):ShopState{return{seed,rerollCost:shop.rerollCost+1,slots:rollSlots(seed,populationLevel,shop.slots)}}
 
 export function buyPopulationXp(population:PopulationState,gold:number){
-  if(gold<4)throw new Error('金币不足');
-  if(population.level>=8)throw new Error('人口已满级');
-  const xp=population.xp+4;
-  const level=Math.min(8,POP_THRESHOLDS.filter(threshold=>threshold<=xp).length);
+  if(gold<4)throw new Error('金币不足');if(population.level>=8)throw new Error('人口已满级');
+  const xp=population.xp+4,level=Math.min(8,POP_THRESHOLDS.filter(threshold=>threshold<=xp).length);
   return{population:{level,xp},gold:gold-4};
 }
-
 export const populationProgress=(population:PopulationState)=>{
-  const current=POP_THRESHOLDS[population.level-1]!;
-  const next=POP_THRESHOLDS[population.level];
+  const current=POP_THRESHOLDS[population.level-1]!,next=POP_THRESHOLDS[population.level];
   return next===undefined?{current:0,required:0,max:true}:{current:population.xp-current,required:next-current,max:false};
 };
 
-export function firstFreeCell(balls:readonly BallUnit[]):Cell{
-  for(let col=0;col<3;col++)for(let row=0;row<4;row++){
-    if(!balls.some(ball=>ball.cell.row===row&&ball.cell.col===col))return{row:row as Cell['row'],col:col as Cell['col']};
-  }
-  throw new Error('棋盘已满');
+export function cardFromItem(item:ShopItem,id:string):CardInstance{
+  if(item.kind==='unit')return{id,kind:'unit',ballClass:item.ballClass};
+  if(item.kind==='peg')return{id,kind:'peg',pegType:item.pegType,quality:item.quality};
+  return{id,kind:item.kind,quality:item.quality};
 }
 
-export function buyBallFromShop(state:RunState,slotIndex:number):RunState{
+export function buyCardFromShop(state:RunState,slotIndex:number):RunState{
   if(state.phase!=='SHOP')throw new Error('当前无法购买');
-  const shopSlot=state.shop.slots[slotIndex];
-  if(!shopSlot||shopSlot.sold||shopSlot.item.kind!=='ball')throw new Error('商品不可购买');
-  if(state.balls.length>=state.population.level)throw new Error('人口已满');
+  const shopSlot=state.shop.slots[slotIndex];if(!shopSlot||shopSlot.sold)throw new Error('商品不可购买');
+  if(shopSlot.item.kind==='unit'&&unitCardCount(state.cards)>=state.population.level)throw new Error('人口已满');
   if(state.gold<shopSlot.item.price)throw new Error('金币不足');
-  const ball=createBall(`b${state.nextId}`,shopSlot.item.ballClass,firstFreeCell(state.balls));
-  return{
-    ...state,gold:state.gold-shopSlot.item.price,nextId:state.nextId+1,balls:[...state.balls,ball],
-    shop:{...state.shop,slots:state.shop.slots.map((value,index)=>index===slotIndex?{...value,sold:true}:value)},
-  };
+  const id=`c${state.nextId}`,card=cardFromItem(shopSlot.item,id);
+  return{...state,gold:state.gold-shopSlot.item.price,nextId:state.nextId+1,cards:[...state.cards,card],
+    cardRound:{...state.cardRound,[id]:'available'},
+    shop:{...state.shop,slots:state.shop.slots.map((value,index)=>index===slotIndex?{...value,sold:true}:value)}};
 }
