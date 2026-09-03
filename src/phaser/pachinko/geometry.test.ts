@@ -9,6 +9,11 @@ describe('manual pachinko launch geometry',()=>{
     expect(LAUNCH_ZONE.maxY).toBeLessThan(Math.min(...GRID_SLOTS.map(peg=>peg.y))-MACHINE.projectileRadius);
     expect(isLaunchPoint(LAUNCH_ZONE.minX,LAUNCH_ZONE.minY)).toBe(true);
     expect(isLaunchPoint(MACHINE.leftWallX,LAUNCH_ZONE.minY)).toBe(false);
+    expect(MACHINE.exit.width).toBeGreaterThanOrEqual(560);
+    expect(MACHINE.exit.x-MACHINE.exit.width/2).toBeLessThanOrEqual(MACHINE.leftWallX+MACHINE.projectileRadius);
+    expect(MACHINE.exit.x+MACHINE.exit.width/2).toBeGreaterThanOrEqual(MACHINE.rightWallX-MACHINE.projectileRadius);
+    expect(Math.min(...GRID_SLOTS.map(peg=>peg.x))).toBeGreaterThan(MACHINE.leftWallX+MACHINE.projectileRadius+9);
+    expect(Math.max(...GRID_SLOTS.map(peg=>peg.x))).toBeLessThan(MACHINE.rightWallX-MACHINE.projectileRadius-9);
   });
   it('maps pointer distance to clamped launch strength',()=>{
     expect(aimVelocity({x:0,y:0},{x:0,y:0})).toEqual({x:0,y:AIM_SPEED.min,speed:AIM_SPEED.min});

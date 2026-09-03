@@ -69,9 +69,7 @@ export class GameScene extends Phaser.Scene{
     const addWall=(x:number,y:number,w:number,h:number,angle=0)=>this.matter.add.rectangle(x,y,w,h,{isStatic:true,label:'wall',angle,friction:.02,restitution:.76});
     addWall(MACHINE.leftWallX,312,18,MACHINE.bottomY-MACHINE.topY);addWall(MACHINE.rightWallX,312,18,MACHINE.bottomY-MACHINE.topY);
     addWall((MACHINE.leftWallX+MACHINE.rightWallX)/2,MACHINE.topY,MACHINE.rightWallX-MACHINE.leftWallX,16);
-    addWall(108,522,175,12,.16);addWall(564,522,175,12,-.16);
-    this.add.rectangle(108,522,175,12,0x9b6d31).setRotation(.16).setStrokeStyle(3,0xf2c96f);
-    this.add.rectangle(564,522,175,12,0x9b6d31).setRotation(-.16).setStrokeStyle(3,0xf2c96f);
+    // 右侧发射轨道已移除，底部不再设置会把小球夹在两侧的导流板。
     this.launchZoneView=this.add.rectangle((LAUNCH_ZONE.minX+LAUNCH_ZONE.maxX)/2,(LAUNCH_ZONE.minY+LAUNCH_ZONE.maxY)/2,LAUNCH_ZONE.maxX-LAUNCH_ZONE.minX,LAUNCH_ZONE.maxY-LAUNCH_ZONE.minY,0x69d9cf,.035).setStrokeStyle(2,0x69d9cf,.45).setDepth(1);
     this.add.text(336,92,'小球卡拖放区',{fontFamily:'monospace',fontSize:'11px',color:'#69d9cf'}).setOrigin(.5).setAlpha(.66);
     for(const slot of this.c.snapshot().pegGrid){
@@ -255,6 +253,8 @@ export class GameScene extends Phaser.Scene{
     for(const slot of this.c.snapshot().pegGrid){const deadline=this.pegCooldowns.get(slot.id);if(deadline!==undefined&&deadline<=this.time.now)this.pegCooldowns.delete(slot.id);if(slot.type==='multiplier')this.updatePegView(slot)}
     for(const active of this.projectiles.values()){
       const body=active.img.body as MatterJS.BodyType|undefined,elapsed=this.time.now-active.launchedAt;if(!body){this.projectiles.delete(active.state.id);continue}
+      const exitLeft=MACHINE.exit.x-MACHINE.exit.width/2-MACHINE.projectileRadius,exitRight=MACHINE.exit.x+MACHINE.exit.width/2+MACHINE.projectileRadius;
+      if(active.img.y>=MACHINE.exit.y-MACHINE.exit.height/2&&active.img.x>=exitLeft&&active.img.x<=exitRight){this.exitProjectile(active.state.id);continue}
       if(elapsed>12000&&!active.forced){active.forced=true;active.img.setVelocity((MACHINE.exit.x-active.img.x)/45,12);this.toast('引导弹丸前往出口')}
       const speed=Math.abs(body.velocity.x)+Math.abs(body.velocity.y),inField=active.img.x>MACHINE.leftWallX+20&&active.img.x<MACHINE.rightWallX-20&&active.img.y>MACHINE.topY+20&&active.img.y<MACHINE.exit.y,stalled=inField&&speed<.45;
       active.stalledSince=stalled?(active.stalledSince??this.time.now):undefined;if(active.stalledSince!==undefined&&this.time.now-active.stalledSince>900){const direction=active.img.x<MACHINE.exit.x?1:-1;active.rescueCount++;active.stalledSince=undefined;active.img.setPosition(Phaser.Math.Clamp(active.img.x+direction*12,MACHINE.leftWallX+24,MACHINE.rightWallX-24),Math.min(active.img.y+26,MACHINE.exit.y-24));active.img.setVelocity(direction*Phaser.Math.FloatBetween(2.2,3.6),Phaser.Math.FloatBetween(3.5,5.5));this.burst(active.img.x,active.img.y,0x9af6dd)}

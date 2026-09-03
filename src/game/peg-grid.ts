@@ -5,7 +5,7 @@ export const GRID_COLUMNS=8;
 export const GRID_ROWS=5;
 export const GRID_SLOTS:PegSlot[]=Array.from({length:GRID_COLUMNS*GRID_ROWS},(_,id)=>({
   id,
-  x:72+(id%GRID_COLUMNS)*66,
+  x:52+(id%GRID_COLUMNS)*81,
   y:250+Math.floor(id/GRID_COLUMNS)*55,
   type:'normal',
   quality:'common',

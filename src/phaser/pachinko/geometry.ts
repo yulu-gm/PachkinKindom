@@ -1,6 +1,7 @@
 export const MACHINE={
   leftWallX:25,rightWallX:647,topY:76,bottomY:548,
-  exit:{x:336,y:548,width:210,height:22},
+  // 出口覆盖接近整个底边，避免小球从两侧漏过传感器。
+  exit:{x:336,y:548,width:600,height:30},
   projectileRadius:12,
 }as const;
 

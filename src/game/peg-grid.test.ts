@@ -8,8 +8,8 @@ describe('peg grid',()=>{
     expect(GRID_SLOTS).toHaveLength(40);
     expect(new Set(GRID_SLOTS.map(slot=>slot.x))).toHaveLength(8);
     expect(new Set(GRID_SLOTS.map(slot=>slot.y))).toHaveLength(5);
-    expect(Math.min(...GRID_SLOTS.map(slot=>slot.x))).toBe(72);
-    expect(Math.max(...GRID_SLOTS.map(slot=>slot.x))).toBe(534);
+    expect(Math.min(...GRID_SLOTS.map(slot=>slot.x))).toBe(52);
+    expect(Math.max(...GRID_SLOTS.map(slot=>slot.x))).toBe(619);
     expect(Math.min(...GRID_SLOTS.map(slot=>slot.y))).toBe(250);
     expect(Math.max(...GRID_SLOTS.map(slot=>slot.y))).toBe(470);
   });

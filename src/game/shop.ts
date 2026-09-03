@@ -74,7 +74,8 @@ export const populationProgress=(population:PopulationState)=>{
 
 export function cardFromItem(item:ShopItem,id:string):CardInstance{
   if(item.kind==='unit')return{id,kind:'unit',ballClass:item.ballClass};
-  if(item.kind==='peg')return{id,kind:'peg',pegType:item.pegType,quality:item.quality};
+  // 钉子部署后永久留在训练场，因此部署牌本身必须作为消耗品移除。
+  if(item.kind==='peg')return{id,kind:'peg',pegType:item.pegType,quality:item.quality,consumable:true};
   return{id,kind:item.kind,quality:item.quality};
 }
 

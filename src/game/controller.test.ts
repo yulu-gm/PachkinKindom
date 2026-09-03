@@ -31,12 +31,17 @@ describe('card preparation controller',()=>{
   it('uses four quality tiers for bomb count and values',()=>{
     expect(Object.values(BOMB_DATA).map(data=>[data.projectiles,data.experienceBonus,data.multiplier])).toEqual([[3,3,1.2],[3,5,1.5],[4,5,1.5],[5,8,2]]);
   });
-  it('covers peg cards for the round and returns all persistent cards next round',()=>{
+  it('consumes peg cards and keeps their installed pegs across rounds',()=>{
     const cards:CardInstance[]=[{id:'c1',kind:'unit',ballClass:'warrior'},{id:'g1',kind:'peg',pegType:'power',quality:'rare'},{id:'g2',kind:'peg',pegType:'guard',quality:'epic'}];
     const initial=withCards(4,cards),controller=new GameController(4,{...initial,balls:[{...createBall('hero','warrior',{row:0,col:0},'c1'),form:'lord',star:3}]});
     controller.placePegCard('g1',2);controller.placePegCard('g2',2);expect(controller.snapshot().cardRound).toMatchObject({g1:'invalidated',g2:'equipped'});expect(controller.snapshot().roundUsedCards).toMatchObject({g1:{id:'g1'},g2:{id:'g2'}});expect(controller.snapshot().pegGrid[2]).toMatchObject({type:'guard',quality:'epic'});
     controller.beginExpedition();for(let tick=0;tick<3000&&controller.snapshot().phase==='BATTLE';tick++)controller.tickBattle(50);
-    expect(controller.snapshot().stage).toBe(2);expect(controller.snapshot().balls).toEqual([]);expect(controller.snapshot().pegGrid[2]).toMatchObject({type:'normal',bonusXp:0,bonusMultiplier:1});expect(controller.snapshot().cardRound).toMatchObject({g1:'available',g2:'available'});
+    expect(controller.snapshot().stage).toBe(2);expect(controller.snapshot().balls).toEqual([]);expect(controller.snapshot().pegGrid[2]).toMatchObject({type:'guard',quality:'epic',bonusXp:0,bonusMultiplier:1});expect(controller.card('g1')).toBeUndefined();expect(controller.card('g2')).toBeUndefined();
+  });
+  it('marks shop peg cards as consumable before they are deployed',()=>{
+    const run=createRun(9),controller=new GameController(9,{...run,gold:20}),pegSlot=controller.snapshot().shop.slots.findIndex(slot=>slot.item.kind==='peg');
+    expect(pegSlot).toBeGreaterThanOrEqual(0);controller.buyItem(pegSlot);const card=controller.snapshot().cards.find(value=>value.kind==='peg');
+    expect(card).toMatchObject({kind:'peg',consumable:true});
   });
   it('removes consumable cards only after a successful launch',()=>{
     const cards:CardInstance[]=[{id:'c1',kind:'unit',ballClass:'warrior'},{id:'once',kind:'experience-bomb',quality:'common',consumable:true}],controller=new GameController(5,withCards(5,cards));

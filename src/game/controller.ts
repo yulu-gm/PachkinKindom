@@ -4,7 +4,7 @@ import{BOMB_DATA,fanAnglesFor,isBallCard,roundStateFor,strengthenPeg}from'./card
 import{ENCOUNTERS}from'./encounters';
 import type{ActiveProjectile,BallForm,CardInstance,Cell,PegQuality,RunState,Star}from'./model';
 import{applyPegHit,createLaunchResult,SPRING_EFFECT}from'./peg-grid';
-import{createRun,freshPegGrid}from'./run-state';
+import{createRun,nextStagePegGrid}from'./run-state';
 import{BALL_SELL_PRICE,buyCardFromShop,buyPopulationXp,createShop,rerollShop}from'./shop';
 import{createBall}from'./ball-progression';
 
@@ -139,7 +139,7 @@ export class GameController{
     if(!card||card.kind!=='peg'||!card.pegType||!card.quality)throw new Error('请拖动钉子卡');if(!target)throw new Error('钉位不存在');
     if(this.state.cardRound[cardId]!=='available')throw new Error('卡牌本局不可用');
     const round={...this.state.cardRound};if(target.installedCardId)round[target.installedCardId]='invalidated';round[cardId]='equipped';
-    const cards=card.consumable?this.state.cards.filter(value=>value.id!==card.id):this.state.cards;
+    const cards=this.state.cards.filter(value=>value.id!==card.id);
     this.state={...this.state,cards,cardRound:round,roundUsedCards:{...this.state.roundUsedCards,[card.id]:card},pegGrid:this.state.pegGrid.map(slot=>slot.id===gridSlotId?{...slot,type:card.pegType!,quality:card.quality!,installedCardId:card.id}:slot)};this.emit();
   }
   placePeg(_shopSlotIndex:number,_gridSlotId:number){throw new Error('请先购买钉子卡，再从手牌拖动装配')}
@@ -166,7 +166,7 @@ export class GameController{
         if(this.state.stage>=ENCOUNTERS.length)this.state={...this.state,gold,phase:'RUN_END',result:'victory'};
         else{const stage=this.state.stage+1,cards=this.state.cards;
           this.state={...this.state,gold,stage,phase:'SHOP',shop:createShop(this.nextSeed(),this.state.population.level),cards,cardRound:roundStateFor(cards),roundUsedCards:{},
-            aimingCardId:undefined,activeProjectiles:{},balls:[],pegGrid:freshPegGrid(),launchResults:{},launchQueue:[],transferredBallIds:[]};
+            aimingCardId:undefined,activeProjectiles:{},balls:[],pegGrid:nextStagePegGrid(this.state.pegGrid),launchResults:{},launchQueue:[],transferredBallIds:[]};
         }
       }else this.state={...this.state,phase:'RUN_END',result:'defeat'};this.emit();
     }return events;
